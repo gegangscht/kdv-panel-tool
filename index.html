@@ -1020,8 +1020,19 @@ async function savePanel() {
   const { data: panel, error } = await db.from('panels').insert({ name, user_name: userName }).select().single();
   if (error) { toast('Error: '+error.message, 'error'); return; }
 
-  await db.from('panel_rows').insert(currentPanel.map((r,i) => ({ panel_id: panel.id, ...r, sort_order: i })));
-  toast(`"${name}" saved!`, 'success');
+  const rowsToInsert = currentPanel.map((r,i) => ({
+    panel_id:     panel.id,
+    marker:       r.marker       || '',
+    code:         r.code         || '',
+    fluorochrome: r.fluorochrome || '',
+    dilution:     r.dilution     || '',
+    notes:        r.notes        || '',
+    sort_order:   i
+  }));
+
+  const { error: rowError } = await db.from('panel_rows').insert(rowsToInsert);
+  if (rowError) { toast('Error saving rows: '+rowError.message, 'error'); return; }
+  toast(`"${name}" saved — ${rowsToInsert.length} markers`, 'success');
 }
 
 // ── SAVED PANELS ──────────────────────────────────────────
