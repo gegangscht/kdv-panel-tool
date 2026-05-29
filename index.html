@@ -370,6 +370,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   <button class="nav-btn" onclick="showView('database')">Database</button>
   <button class="nav-btn" onclick="showView('signout')">Sign-out Log</button>
   <button class="nav-btn" onclick="showView('experiment')">Experiment</button>
+  <button class="nav-btn" onclick="showView('dilutions')">Dilution DB</button>
   <div class="nav-spacer"></div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
@@ -817,6 +818,82 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   </div>
 </div>
 
+<!-- DILUTION DATABASE VIEW -->
+<div id="dilutions-view" class="view">
+  <div class="page-header">
+    <div class="page-header-text">
+      <h2>Dilution Database</h2>
+      <p>All titrated and logged dilutions from the lab</p>
+    </div>
+  </div>
+  <div class="db-toolbar">
+    <input type="text" placeholder="Search marker, code, fluorochrome..." id="dil-search" oninput="filterDilutions()">
+    <select id="dil-tissue-filter" onchange="filterDilutions()">
+      <option value="">All tissues</option>
+    </select>
+    <select id="dil-protocol-filter" onchange="filterDilutions()">
+      <option value="">All protocols</option>
+      <option value="fresh">Fresh</option>
+      <option value="fixed">Fixed</option>
+    </select>
+    <select id="dil-titrated-filter" onchange="filterDilutions()">
+      <option value="">All entries</option>
+      <option value="true">Titrated only</option>
+      <option value="false">Not titrated</option>
+    </select>
+  </div>
+  <div class="db-table-wrap">
+    <table class="db-table">
+      <thead>
+        <tr>
+          <th>Marker</th><th>Fluorochrome</th><th>Code</th>
+          <th>Dilution</th><th>Tissue</th><th>Protocol</th>
+          <th>Duration</th><th>Titrated</th><th>By</th><th>Date</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="dil-tbody">
+        <tr><td colspan="11"><div class="page-loader"><span class="loader"></span></div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- EDIT DILUTION MODAL -->
+<div class="modal-overlay" id="edit-dil-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('edit-dil-modal')">×</button>
+    <h3>Edit Dilution Entry</h3>
+    <input type="hidden" id="edit-dil-id">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label class="form-label">Dilution</label><input type="text" class="form-input" id="edit-dil-dilution" placeholder="e.g. 1:200"></div>
+      <div class="form-group"><label class="form-label">Tissue</label><select class="form-input" id="edit-dil-tissue"></select></div>
+      <div class="form-group"><label class="form-label">Protocol</label>
+        <select class="form-input" id="edit-dil-protocol">
+          <option value="fresh">Fresh</option>
+          <option value="fixed">Fixed</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Duration</label>
+        <select class="form-input" id="edit-dil-duration">
+          <option value="30min">30 min</option>
+          <option value="overnight">Overnight</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Titrated</label>
+        <select class="form-input" id="edit-dil-titrated">
+          <option value="false">No</option>
+          <option value="true">Yes</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Notes</label><input type="text" class="form-input" id="edit-dil-notes"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('edit-dil-modal')">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 24px" onclick="submitEditDilution()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
 </div><!-- end #app -->
 
 <!-- ADD ANTIBODY MODAL -->
@@ -1006,6 +1083,7 @@ function showView(name) {
   if (name === 'signout')    { loadSignoutLog(); loadOrderHistory(); }
   if (name === 'landing')    loadActivity();
   if (name === 'experiment') { loadSavedExperimentsList(); loadTissues(); }
+  if (name === 'dilutions')  loadDilutionDB();
 }
 
 // ── PANEL BUILDER ─────────────────────────────────────────
@@ -1732,6 +1810,126 @@ function toast(msg, type='') {
 }
 
 
+
+// ════════════════════════════════════════════════════════
+// DILUTION DATABASE
+// ════════════════════════════════════════════════════════
+let allDilutions   = [];
+let filtDilutions  = [];
+
+async function loadDilutionDB() {
+  const tbody = document.getElementById('dil-tbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="11"><div class="page-loader"><span class="loader"></span></div></td></tr>';
+
+  const { data, error } = await db.from('dilution_logs')
+    .select('*').order('created_at', { ascending: false });
+
+  allDilutions  = data || [];
+  filtDilutions = [...allDilutions];
+
+  // Populate tissue filter
+  const sel = document.getElementById('dil-tissue-filter');
+  if (sel && allDilutions.length) {
+    const tissues = [...new Set(allDilutions.map(d => d.tissue).filter(Boolean))].sort();
+    sel.innerHTML = '<option value="">All tissues</option>'
+      + tissues.map(t => `<option value="${t}">${t}</option>`).join('');
+  }
+
+  renderDilutionTable();
+}
+
+function filterDilutions() {
+  const term     = document.getElementById('dil-search')?.value.trim().toLowerCase() || '';
+  const tissue   = document.getElementById('dil-tissue-filter')?.value || '';
+  const protocol = document.getElementById('dil-protocol-filter')?.value || '';
+  const titrated = document.getElementById('dil-titrated-filter')?.value || '';
+
+  filtDilutions = allDilutions.filter(d => {
+    const matchTerm = !term ||
+      (d.marker||'').toLowerCase().includes(term) ||
+      (d.fluorochrome||'').toLowerCase().includes(term) ||
+      (d.antibody_code||'').toLowerCase().includes(term) ||
+      (d.dilution||'').toLowerCase().includes(term);
+    const matchTissue   = !tissue   || d.tissue   === tissue;
+    const matchProtocol = !protocol || d.protocol === protocol;
+    const matchTitrated = !titrated || String(d.titrated) === titrated;
+    return matchTerm && matchTissue && matchProtocol && matchTitrated;
+  });
+
+  renderDilutionTable();
+}
+
+function renderDilutionTable() {
+  const tbody = document.getElementById('dil-tbody');
+  if (!tbody) return;
+
+  if (!filtDilutions.length) {
+    tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state">No dilution entries found</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtDilutions.map(d => {
+    const date = new Date(d.created_at).toLocaleDateString('nl-NL');
+    return `<tr>
+      <td><strong>${d.marker||''}</strong></td>
+      <td>${d.fluorochrome||''}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--accent)">${d.antibody_code||''}</td>
+      <td style="font-weight:600;color:var(--accent);font-size:15px">${d.dilution||''}</td>
+      <td style="color:var(--muted)">${d.tissue||''}</td>
+      <td style="color:var(--muted)">${d.protocol||''}</td>
+      <td style="color:var(--muted)">${d.duration||''}</td>
+      <td style="text-align:center">${d.titrated
+        ? '<span style="color:var(--green);font-weight:600">✓</span>'
+        : '<span style="color:var(--muted)">—</span>'}</td>
+      <td style="color:var(--muted);font-size:12px">${d.user_name||''}</td>
+      <td style="color:var(--muted);font-size:12px">${date}</td>
+      <td style="white-space:nowrap">
+        <button class="btn-icon" onclick='openEditDilution(${JSON.stringify(d)})'>Edit</button>
+        <button class="btn-icon danger" onclick="deleteDilution('${d.id}')">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openEditDilution(d) {
+  document.getElementById('edit-dil-id').value       = d.id;
+  document.getElementById('edit-dil-dilution').value = d.dilution || '';
+  document.getElementById('edit-dil-protocol').value = d.protocol || 'fresh';
+  document.getElementById('edit-dil-duration').value = d.duration || '30min';
+  document.getElementById('edit-dil-titrated').value = String(d.titrated || false);
+  document.getElementById('edit-dil-notes').value    = d.notes || '';
+
+  // Populate tissue dropdown
+  const sel = document.getElementById('edit-dil-tissue');
+  sel.innerHTML = '<option value="">Select tissue...</option>'
+    + tissueList.map(t => `<option value="${t.name}" ${d.tissue===t.name?'selected':''}>${t.name}</option>`).join('');
+
+  openModal('edit-dil-modal');
+}
+
+async function submitEditDilution() {
+  const id = document.getElementById('edit-dil-id').value;
+  const { error } = await db.from('dilution_logs').update({
+    dilution:  document.getElementById('edit-dil-dilution').value.trim(),
+    tissue:    document.getElementById('edit-dil-tissue').value,
+    protocol:  document.getElementById('edit-dil-protocol').value,
+    duration:  document.getElementById('edit-dil-duration').value,
+    titrated:  document.getElementById('edit-dil-titrated').value === 'true',
+    notes:     document.getElementById('edit-dil-notes').value.trim(),
+  }).eq('id', id);
+
+  if (error) { toast('Error: '+error.message, 'error'); return; }
+  closeModal('edit-dil-modal');
+  toast('Updated!', 'success');
+  loadDilutionDB();
+}
+
+async function deleteDilution(id) {
+  if (!confirm('Delete this dilution entry?')) return;
+  await db.from('dilution_logs').delete().eq('id', id);
+  toast('Deleted');
+  loadDilutionDB();
+}
 // ════════════════════════════════════════════════════════
 // ORDER MANAGEMENT
 // ════════════════════════════════════════════════════════
