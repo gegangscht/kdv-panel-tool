@@ -512,11 +512,29 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <div>
       <div class="panel-section">
         <div class="panel-section-header">🧬 Your Panel</div>
-        <div class="panel-name-row">
-          <input type="text" class="panel-name-input" id="panel-name" placeholder="Panel name (e.g. Treg panel v1)" oninput="localStorage.setItem('kdv_panel_name', this.value)">
+        <div class="panel-name-row" style="flex-wrap:wrap;gap:8px;padding:14px 16px;">
+          <input type="text" class="panel-name-input" id="panel-name"
+            placeholder="Panel name (e.g. Treg panel v1)"
+            oninput="localStorage.setItem('kdv_panel_name', this.value)"
+            style="min-width:200px;flex:2">
+          <select class="dilution-input" id="panel-protocol" style="width:90px;height:34px">
+            <option value="fresh">Fresh</option>
+            <option value="fixed">Fixed</option>
+          </select>
+          <select class="dilution-input" id="panel-duration" style="width:110px;height:34px">
+            <option value="30min">30 min</option>
+            <option value="overnight">Overnight</option>
+          </select>
+          <div id="panel-tissue-chips" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;flex:1;min-width:120px"></div>
           <button class="btn-clear" onclick="sortPanelByLaser()" title="Sort by laser line">⇅ Sort</button>
           <button class="btn-clear" onclick="clearPanel()">Clear</button>
           <button class="btn-save" onclick="savePanel()">💾 Save</button>
+        </div>
+        <div style="padding:0 16px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--border)">
+          <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px">Tissues:</span>
+          <div id="panel-tissue-selector" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
+          <span style="font-size:11px;color:var(--muted);margin-left:8px">|</span>
+          <span style="font-size:11px;color:var(--muted)">When saving, Titrated markers will be logged to the dilution database</span>
         </div>
         <div class="panel-table-wrap">
           <table class="panel-table">
@@ -524,7 +542,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
               <tr>
                 <th>Marker</th><th>Code</th><th>Fluorochrome</th>
                 <th>Laser</th><th>Symphony</th><th>Aurora</th>
-                <th>Dilution</th><th></th>
+                <th>Dilution</th><th>Titrated</th><th></th>
               </tr>
             </thead>
             <tbody id="panel-tbody">
@@ -888,6 +906,7 @@ function loginAs(name) {
   document.getElementById('welcome-name').textContent = name.split(' ')[0];
   restorePanelFromLocal();
   initLiveDeadPicker();
+  await loadTissues();
   showView('landing');
   loadActivity();
 }
@@ -1246,6 +1265,7 @@ function restorePanelFromLocal() {
     const saved   = localStorage.getItem('kdv_current_panel');
     const savedLD = localStorage.getItem('kdv_current_livedead');
     const name    = localStorage.getItem('kdv_panel_name');
+    const tissues = localStorage.getItem('kdv_panel_tissues');
     if (saved) {
       currentPanel = JSON.parse(saved);
       if (name) document.getElementById('panel-name').value = name;
@@ -1254,6 +1274,9 @@ function restorePanelFromLocal() {
     if (savedLD) {
       currentLiveDead = JSON.parse(savedLD);
       renderLiveDead();
+    }
+    if (tissues) {
+      panelTissues = JSON.parse(tissues);
     }
   } catch(e) {}
 }
@@ -1265,7 +1288,7 @@ function laserToRowClass(laser) {
 function renderPanel() {
   const tbody = document.getElementById('panel-tbody');
   if (!currentPanel.length) {
-    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No antibodies added yet — use + Surface or + IC buttons in search</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">No antibodies added yet — use + Surface or + IC buttons in search</div></td></tr>';
     return;
   }
 
@@ -1299,6 +1322,12 @@ function renderPanel() {
             onclick="showDilutionLog('${r.code}','${r.marker}','${r.fluorochrome}')"
             title="See what others used">📊</button>
         </td>
+        <td style="text-align:center">
+          <input type="checkbox" style="width:15px;height:15px;cursor:pointer"
+            title="Mark as titrated — will be logged when panel is saved"
+            ${r.titrated ? 'checked' : ''}
+            onchange="currentPanel[${i}].titrated=this.checked; savePanelToLocal()">
+        </td>
         <td><button class="btn-remove" onclick="removeFromPanel(${i})">✕</button></td>
       </tr>`;
     }).join('');
@@ -1308,14 +1337,14 @@ function renderPanel() {
 
   // Surface section
   if (surface.length) {
-    html += `<tr><td colspan="8" style="padding:6px 10px;background:var(--surface2);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">
+    html += `<tr><td colspan="9" style="padding:6px 10px;background:var(--surface2);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">
       Surface Staining (${surface.length} markers)</td></tr>`;
     html += renderRows(surface, 0);
   }
 
   // Intracellular section
   if (ic.length) {
-    html += `<tr><td colspan="8" style="padding:6px 10px;background:#2a1a3a;font-size:11px;font-weight:700;color:var(--violet);text-transform:uppercase;letter-spacing:0.5px">
+    html += `<tr><td colspan="9" style="padding:6px 10px;background:#2a1a3a;font-size:11px;font-weight:700;color:var(--violet);text-transform:uppercase;letter-spacing:0.5px">
       Intracellular Staining (${ic.length} markers)</td></tr>`;
     html += renderRows(ic, surface.length);
   }
@@ -1368,7 +1397,20 @@ async function savePanel() {
     });
   }
 
-  toast(`"${name}" ${existing ? 'updated' : 'saved'} — ${rowsToInsert.length} markers`, 'success');
+  // Log titrated markers to dilution_logs
+  const protocol = document.getElementById('panel-protocol')?.value || '';
+  const duration  = document.getElementById('panel-duration')?.value || '';
+  const tissues   = panelTissues.length ? panelTissues.join(', ') : '';
+  const titrated  = currentPanel.filter(r => r.titrated && r.dilution);
+  for (const r of titrated) {
+    await db.from('dilution_logs').insert({
+      antibody_code: r.code, marker: r.marker, fluorochrome: r.fluorochrome,
+      dilution: r.dilution, tissue: tissues, protocol, duration,
+      titrated: true, user_name: userName, notes: `Logged via panel: ${name}`
+    });
+  }
+  const titratedMsg = titrated.length ? ` · ${titrated.length} dilutions logged` : '';
+  toast(`"${name}" ${existing ? 'updated' : 'saved'} — ${rowsToInsert.length} markers${titratedMsg}`, 'success');
 }
 
 // ── SAVED PANELS ──────────────────────────────────────────
@@ -1414,6 +1456,7 @@ async function loadSavedPanels() {
       <div class="sp-actions">
         <button class="btn-save" style="font-size:12px;padding:6px 14px" onclick="usePanelForExperiment('${p.id}','${p.name.replace(/'/g,"\'")}')">Use Panel →</button>
         <button class="btn-secondary" style="font-size:12px;padding:6px 12px" onclick="loadPanelIntoBuilder('${p.id}')">Edit</button>
+        <button class="btn-secondary" style="font-size:12px;padding:6px 12px" onclick="duplicatePanel('${p.id}','${p.name.replace(/'/g,\"\'\").replace(/"/g,'&quot;')}')">Duplicate</button>
         ${p.user_name === userName ? `<button class="btn-icon danger" onclick="deletePanel('${p.id}')">Delete</button>` : ''}
       </div>
     </div>`;
@@ -1451,6 +1494,29 @@ async function deletePanel(id) {
   if (!confirm('Delete this panel?')) return;
   await db.from('panels').delete().eq('id', id);
   toast('Deleted'); loadSavedPanels();
+}
+
+async function duplicatePanel(panelId, panelName) {
+  const newName = prompt('Name for the duplicate:', panelName + ' (copy)');
+  if (!newName?.trim()) return;
+
+  const { data: rows } = await db.from('panel_rows').select('*').eq('panel_id', panelId).order('sort_order');
+  if (!rows) { toast('Could not load panel', 'error'); return; }
+
+  const { data: newPanel, error } = await db.from('panels')
+    .insert({ name: newName.trim(), user_name: userName }).select().single();
+  if (error) { toast('Error: '+error.message, 'error'); return; }
+
+  if (rows.length) {
+    await db.from('panel_rows').insert(rows.map(r => ({
+      panel_id: newPanel.id, marker: r.marker, code: r.code,
+      fluorochrome: r.fluorochrome, dilution: r.dilution||'',
+      notes: r.notes||'', staining_type: r.staining_type||'surface',
+      sort_order: r.sort_order
+    })));
+  }
+  toast(`Duplicated as "${newName.trim()}"`, 'success');
+  loadSavedPanels();
 }
 
 // ── DATABASE ──────────────────────────────────────────────
@@ -1665,6 +1731,8 @@ let experimentFMOs     = new Set();
 let dilutionModalMeta  = {};    // current antibody being viewed
 let tissueList         = [];
 
+let panelTissues = [];  // multi-select array for panel builder
+
 async function loadTissues() {
   const { data } = await db.from('tissues').select('*').order('name');
   tissueList = data || [];
@@ -1675,6 +1743,33 @@ async function loadTissues() {
   const sel2 = document.getElementById('exp-tissue');
   if (sel1) sel1.innerHTML = opts;
   if (sel2) sel2.innerHTML = opts;
+  renderTissueSelector();
+}
+
+function renderTissueSelector() {
+  const el = document.getElementById('panel-tissue-selector');
+  if (!el || !tissueList.length) return;
+  el.innerHTML = tissueList.map(t => `
+    <label style="display:flex;align-items:center;gap:4px;padding:3px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-size:11px;">
+      <input type="checkbox" style="width:12px;height:12px"
+        onchange="togglePanelTissue('${t.name}',this.checked)"
+        ${panelTissues.includes(t.name)?'checked':''}> ${t.name}
+    </label>`).join('')
+    + `<button class="btn-icon" style="font-size:11px;padding:2px 8px" onclick="addNewTissue()">+ New</button>`;
+}
+
+function togglePanelTissue(tissue, checked) {
+  if (checked) { if (!panelTissues.includes(tissue)) panelTissues.push(tissue); }
+  else panelTissues = panelTissues.filter(t => t !== tissue);
+  localStorage.setItem('kdv_panel_tissues', JSON.stringify(panelTissues));
+}
+
+async function addNewTissue() {
+  const name = prompt('New tissue name:');
+  if (!name?.trim()) return;
+  await db.from('tissues').insert({ name: name.trim() });
+  await loadTissues();
+  togglePanelTissue(name.trim(), true);
 }
 
 async function usePanelForExperiment(panelId, panelName) {
@@ -1792,7 +1887,7 @@ function recalcScheme() {
 
     let html = `<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${titleColor};margin-bottom:10px;">${title}</div>`;
     html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:20px;">`;
-    html += `<table class="db-table"><thead><tr><th>Marker</th><th>Code</th><th>Fluorochrome</th><th>Dilution</th><th>µL antibody</th><th>µL buffer</th><th>Titrated</th><th></th></tr></thead><tbody>`;
+    html += `<table class="db-table"><thead><tr><th>Marker</th><th>Code</th><th>Fluorochrome</th><th>Dilution</th><th>µL antibody</th><th></th></tr></thead><tbody>`;
 
     laserKeys.forEach(laser => {
       const lRows  = groups[laser];
@@ -1800,7 +1895,7 @@ function recalcScheme() {
       const lBg    = LASER_BG[laser]||'transparent';
       const lText  = LASER_TEXT[laser]||'var(--muted)';
 
-      html += `<tr><td colspan="8" style="padding:5px 12px;background:${lBg};font-size:11px;font-weight:700;color:${lText};text-transform:uppercase;letter-spacing:0.4px;">${lLabel}</td></tr>`;
+      html += `<tr><td colspan="6" style="padding:5px 12px;background:${lBg};font-size:11px;font-weight:700;color:${lText};text-transform:uppercase;letter-spacing:0.4px;">${lLabel}</td></tr>`;
 
       lRows.forEach(r => {
         const isFMO = experimentFMOs.has(r.marker);
@@ -1813,28 +1908,37 @@ function recalcScheme() {
             value="${r.dilution||''}"
             onchange="updateExpDilution('${r.marker}','${r.staining_type||'surface'}',this.value)"></td>
           <td style="font-weight:600;color:${calc?'var(--accent)':'var(--muted)'}">${calc?calc.abVol+' µL':'—'}</td>
-          <td style="color:var(--muted)">${calc?calc.bufVol+' µL':'—'}</td>
-          <td style="text-align:center">
-            <input type="checkbox" title="Log as titrated" style="width:15px;height:15px;cursor:pointer"
-              onchange="markTitrated('${r.code}','${r.marker}','${r.fluorochrome}',this.checked)">
-          </td>
           <td><button class="btn-icon" style="font-size:10px;padding:2px 5px"
             onclick="showDilutionLog('${r.code}','${r.marker}','${r.fluorochrome}')">📊</button></td>
         </tr>`;
       });
 
-      // Buffer total footer per laser group
-      const abTot  = lRows.reduce((s,r)=>{ const c=calcAntibodyVol(r.dilution,totalVol); return s+(c?c.abVol:0); },0);
-      const bufTot = lRows.reduce((s,r)=>{ const c=calcAntibodyVol(r.dilution,totalVol); return s+(c?c.bufVol:0); },0);
-      if (bufTot>0||abTot>0) {
-        html += `<tr><td colspan="8" style="padding:5px 12px;background:${lBg};border-top:1px solid var(--border);">
-          <span style="font-size:11px;color:${lText};font-weight:600">
-            Subtotal: ${Math.round(abTot*100)/100} µL antibodies · ${Math.round(bufTot*100)/100} µL buffer
-          </span></td></tr>`;
-      }
+      // no per-laser subtotal — section total shown below
     });
 
+    // Section totals
+    const secAbTot  = rows.reduce((s,r)=>{ const c=calcAntibodyVol(r.dilution,totalVol); return s+(c?c.abVol:0); },0);
+    const secBufTot = rows.reduce((s,r)=>{ const c=calcAntibodyVol(r.dilution,totalVol); return s+(c?c.bufVol:0); },0);
+    const secTotal  = Math.round((secAbTot+secBufTot)*100)/100;
     html += '</tbody></table></div>';
+    if (secAbTot > 0) {
+      html += `<div style="margin:-16px 0 20px;padding:12px 20px;background:var(--surface2);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius-lg) var(--radius-lg);font-size:13px;">
+        <div style="display:flex;gap:32px;align-items:baseline;">
+          <div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--muted);margin-bottom:2px">Total volume</div>
+            <div style="font-size:18px;font-weight:700;color:var(--text)">${secTotal} µL</div>
+          </div>
+          <div style="color:var(--muted)">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px">Antibodies</div>
+            <div style="font-size:15px;font-weight:600;color:var(--accent)">+ ${Math.round(secAbTot*100)/100} µL</div>
+          </div>
+          <div style="color:var(--muted)">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px">Buffer</div>
+            <div style="font-size:15px;font-weight:600;color:var(--blue)">+ ${Math.round(secBufTot*100)/100} µL</div>
+          </div>
+        </div>
+      </div>`;
+    }
     return html;
   }
 
