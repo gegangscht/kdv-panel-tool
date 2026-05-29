@@ -628,6 +628,9 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 <div id="signout-view" class="view">
   <div class="page-header">
     <div class="page-header-text"><h2>Sign-out Log</h2><p>Log when you take a backup vial</p></div>
+    <div class="page-header-actions">
+      <button class="btn-secondary" onclick="showOrderPreview()">📋 Preview Order List</button>
+    </div>
   </div>
   <div class="signout-layout">
     <div class="form-card">
@@ -651,8 +654,30 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
       </div>
     </div>
   </div>
+
+  <!-- Order history -->
+  <div style="margin-top:32px;">
+    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:12px;">Order History</div>
+    <div id="order-history-list"></div>
+  </div>
 </div>
 
+
+<!-- ORDER PREVIEW MODAL -->
+<div class="modal-overlay" id="order-modal">
+  <div class="modal" style="max-width:700px">
+    <button class="modal-close" onclick="closeModal('order-modal')">×</button>
+    <h3>📋 Order List — Antibodies from Sign-out Log</h3>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+      These antibodies had backup vials taken. Review and click "Export &amp; Log Order" to download a CSV and record the order date.
+    </p>
+    <div id="order-preview-table" style="max-height:400px;overflow-y:auto;margin-bottom:16px;"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('order-modal')">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 24px" onclick="exportAndLogOrder()">📥 Export &amp; Log Order</button>
+    </div>
+  </div>
+</div>
 
 <!-- EXPERIMENT VIEW -->
 <div id="experiment-view" class="view">
@@ -978,7 +1003,7 @@ function showView(name) {
     if (b.getAttribute('onclick')?.includes(name)) b.classList.add('active');
   });
   if (name === 'saved')      loadSavedPanels();
-  if (name === 'signout')    loadSignoutLog();
+  if (name === 'signout')    { loadSignoutLog(); loadOrderHistory(); }
   if (name === 'landing')    loadActivity();
   if (name === 'experiment') { loadSavedExperimentsList(); loadTissues(); }
 }
@@ -1478,7 +1503,24 @@ async function loadPanelIntoBuilder(panelId) {
   const { data, error } = await db.from('panel_rows').select('*').eq('panel_id', panelId).order('sort_order');
   if (error) { toast('Error loading panel: '+error.message, 'error'); return; }
   if (!data || !data.length) { toast('Panel appears to be empty', 'error'); return; }
-  currentPanel = data.map(r => {
+
+  // Restore live/dead if present
+  const ldRow = data.find(r => r.notes === 'live_dead');
+  if (ldRow) {
+    const fi = getFluorInfo(ldRow.fluorochrome);
+    currentLiveDead = [{
+      name: ldRow.marker.replace('☠️ ',''),
+      fluorochrome: ldRow.fluorochrome,
+      laser: fi?.excitation_laser || '',
+      dilution: ldRow.dilution || ''
+    }];
+    renderLiveDead();
+  } else {
+    currentLiveDead = [];
+    renderLiveDead();
+  }
+
+  currentPanel = data.filter(r => r.notes !== 'live_dead').map(r => {
     const fi = getFluorInfo(r.fluorochrome);
     return {
       marker:        r.marker        || '',
@@ -1689,6 +1731,143 @@ function toast(msg, type='') {
   toastTimeout = setTimeout(() => { el.className=''; }, 3000);
 }
 
+
+// ════════════════════════════════════════════════════════
+// ORDER MANAGEMENT
+// ════════════════════════════════════════════════════════
+let orderItems = [];  // antibodies to order, deduped from sign-out log
+
+async function showOrderPreview() {
+  // Get all sign-out log entries that haven't been ordered yet
+  // We check against order_logs table — items signed out after last order
+  const { data: logs } = await db.from('signout_log')
+    .select('*').order('taken_at', { ascending: false });
+
+  if (!logs?.length) {
+    toast('No sign-outs logged yet', 'error');
+    return;
+  }
+
+  // Deduplicate by antibody_code — keep most recent entry per antibody
+  const seen = new Set();
+  orderItems = [];
+  logs.forEach(r => {
+    const key = r.antibody_code || r.antibody_marker;
+    if (!seen.has(key)) {
+      seen.add(key);
+      orderItems.push(r);
+    }
+  });
+
+  // Enrich with full antibody data
+  const el = document.getElementById('order-preview-table');
+  if (!orderItems.length) {
+    el.innerHTML = '<div class="empty-state">No antibodies to order</div>';
+  } else {
+    el.innerHTML = `
+      <table class="db-table">
+        <thead><tr>
+          <th><input type="checkbox" id="order-check-all" onchange="toggleAllOrderItems(this.checked)" checked> All</th>
+          <th>Code</th><th>Marker</th><th>Fluorochrome</th><th>Last signed out</th><th>By</th>
+        </tr></thead>
+        <tbody>
+          ${orderItems.map((r,i) => `<tr>
+            <td><input type="checkbox" class="order-item-check" data-idx="${i}" checked></td>
+            <td style="font-family:var(--mono);color:var(--accent)">${r.antibody_code||''}</td>
+            <td><strong>${r.antibody_marker||''}</strong></td>
+            <td>${r.antibody_fluorochrome||''}</td>
+            <td style="color:var(--muted);font-size:12px">${new Date(r.taken_at).toLocaleDateString('nl-NL')}</td>
+            <td style="color:var(--muted);font-size:12px">${r.taken_by||''}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  openModal('order-modal');
+}
+
+function toggleAllOrderItems(checked) {
+  document.querySelectorAll('.order-item-check').forEach(cb => cb.checked = checked);
+}
+
+async function exportAndLogOrder() {
+  const checked = [...document.querySelectorAll('.order-item-check')]
+    .map((cb, i) => cb.checked ? orderItems[i] : null)
+    .filter(Boolean);
+
+  if (!checked.length) { toast('Select at least one antibody', 'error'); return; }
+
+  // Build CSV
+  const date = new Date().toLocaleDateString('nl-NL');
+  let csv = `Order List — KDV Lab — ${date}\n`;
+  csv += 'Code,Marker,Fluorochrome,Company,Order #,Last signed out by\n';
+
+  for (const r of checked) {
+    // Look up company/order from antibody database
+    const ab = allAntibodies.find(a => a.code === r.antibody_code) || {};
+    csv += `${r.antibody_code||''},${r.antibody_marker||''},${r.antibody_fluorochrome||''},${ab.company||''},${ab.order_number||''},${r.taken_by||''}\n`;
+  }
+
+  // Download CSV
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `antibody_order_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  // Log the order in database
+  const { error } = await db.from('order_logs').insert({
+    ordered_by:    userName,
+    ordered_at:    new Date().toISOString(),
+    item_count:    checked.length,
+    items_json:    JSON.stringify(checked.map(r => ({
+      code: r.antibody_code, marker: r.antibody_marker, fluorochrome: r.antibody_fluorochrome
+    })))
+  });
+
+  if (error) {
+    // Table might not exist yet — still export worked
+    console.warn('Order log table not found:', error.message);
+    toast(`Exported ${checked.length} antibodies — remember to run the SQL to enable order logging!`, 'success');
+  } else {
+    toast(`Exported & logged ${checked.length} antibodies`, 'success');
+  }
+
+  closeModal('order-modal');
+  loadOrderHistory();
+}
+
+async function loadOrderHistory() {
+  const el = document.getElementById('order-history-list');
+  if (!el) return;
+
+  const { data, error } = await db.from('order_logs')
+    .select('*').order('ordered_at', { ascending: false }).limit(20);
+
+  if (error || !data?.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px">No orders logged yet</div>';
+    return;
+  }
+
+  el.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
+    <table class="db-table">
+      <thead><tr><th>Date</th><th>Ordered by</th><th>Items</th><th>Antibodies</th></tr></thead>
+      <tbody>${data.map(o => {
+        const date = new Date(o.ordered_at).toLocaleDateString('nl-NL');
+        let items = [];
+        try { items = JSON.parse(o.items_json||'[]'); } catch(e) {}
+        return `<tr>
+          <td>${date}</td>
+          <td>${o.ordered_by||'—'}</td>
+          <td style="font-weight:600;color:var(--accent)">${o.item_count}</td>
+          <td style="font-size:11px;color:var(--muted)">${items.slice(0,5).map(i=>i.marker).join(', ')}${items.length>5?' ...':''}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>
+  </div>`;
+}
 // ── We need a users table — add to schema ─────────────────
 // START
 init();
