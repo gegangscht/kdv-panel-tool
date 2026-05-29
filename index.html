@@ -641,7 +641,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   <div class="page-header">
     <div class="page-header-text">
       <h2>Experiment / Pipette Scheme</h2>
-      <p id="exp-panel-name" style="color:var(--accent)"></p>
+      <p id="exp-panel-name" style="color:var(--accent)">No panel loaded — go to Saved Panels and click "Use Panel →"</p>
     </div>
     <div class="page-header-actions">
       <button class="btn-secondary" onclick="printExperiment()">🖨 Print</button>
@@ -650,10 +650,10 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     </div>
   </div>
 
-  <!-- Setup -->
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;margin-bottom:24px;">
+  <!-- Setup + conditions -->
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;margin-bottom:20px;">
     <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:16px;">Setup</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px;align-items:end;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px;align-items:end;">
       <div class="form-group" style="margin:0">
         <label class="form-label">Samples</label>
         <input type="number" class="form-input" id="exp-samples" value="5" min="1" oninput="recalcScheme()">
@@ -672,12 +672,32 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
       <div class="form-group" style="margin:0">
         <label class="form-label">Margin</label>
         <div style="display:flex;gap:6px;">
-          <select class="form-input" id="exp-margin-type" style="width:70px" onchange="recalcScheme()">
+          <select class="form-input" id="exp-margin-type" style="width:65px" onchange="recalcScheme()">
             <option value="ul">µL</option>
             <option value="pct">%</option>
           </select>
-          <input type="number" class="form-input" id="exp-margin-value" value="10" min="0" oninput="recalcScheme()" style="width:70px">
+          <input type="number" class="form-input" id="exp-margin-value" value="10" min="0" oninput="recalcScheme()" style="width:65px">
         </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Tissue</label>
+        <select class="form-input" id="exp-tissue" onchange="recalcScheme()">
+          <option value="">Select...</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Protocol</label>
+        <select class="form-input" id="exp-protocol">
+          <option value="fresh">Fresh</option>
+          <option value="fixed">Fixed</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Duration</label>
+        <select class="form-input" id="exp-duration">
+          <option value="30min">30 min</option>
+          <option value="overnight">Overnight</option>
+        </select>
       </div>
       <div class="form-group" style="margin:0">
         <label class="form-label">Total tubes</label>
@@ -687,44 +707,25 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   </div>
 
   <!-- FMO selector -->
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:24px;">
-    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:12px;">FMO Controls</div>
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 20px;margin-bottom:20px;">
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:10px;">
+      FMO Controls <span style="font-weight:400;font-size:11px">(each FMO adds 1 tube — see FMO grid below for pipetting reference)</span>
+    </div>
     <div id="fmo-selector" style="display:flex;flex-wrap:wrap;gap:8px;">
       <div style="color:var(--muted);font-size:13px;">Load a panel to select FMOs</div>
     </div>
   </div>
 
-  <!-- Surface scheme -->
-  <div id="exp-surface-section" style="margin-bottom:24px;display:none;">
-    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:10px;">
-      Surface Staining
-    </div>
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
-      <table class="db-table" id="exp-surface-table">
-        <thead><tr>
-          <th>Marker</th><th>Code</th><th>Fluorochrome</th>
-          <th>Dilution</th><th>µL antibody</th><th>µL buffer</th><th>Total (µL)</th>
-          <th>📊</th>
-        </tr></thead>
-        <tbody id="exp-surface-tbody"></tbody>
-      </table>
-    </div>
-  </div>
+  <!-- Scheme container — rendered by recalcScheme() -->
+  <div id="exp-scheme-container"></div>
 
-  <!-- IC scheme -->
-  <div id="exp-ic-section" style="margin-bottom:24px;display:none;">
-    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--violet);margin-bottom:10px;">
-      Intracellular Staining
+  <!-- FMO grid -->
+  <div id="exp-fmo-grid-section" style="display:none;margin-bottom:24px;">
+    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:10px;">
+      FMO Reference Grid <span style="font-weight:400;font-size:11px">(✓ = included in that FMO tube)</span>
     </div>
-    <div style="background:var(--surface);border:1px solid #4a1d9644;border-radius:var(--radius-lg);overflow:hidden;">
-      <table class="db-table" id="exp-ic-table">
-        <thead><tr>
-          <th>Marker</th><th>Code</th><th>Fluorochrome</th>
-          <th>Dilution</th><th>µL antibody</th><th>µL buffer</th><th>Total (µL)</th>
-          <th>📊</th>
-        </tr></thead>
-        <tbody id="exp-ic-tbody"></tbody>
-      </table>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:auto;">
+      <table class="db-table" id="exp-fmo-grid-table"></table>
     </div>
   </div>
 
@@ -1327,11 +1328,25 @@ async function savePanel() {
   if (!name) { toast('Enter a panel name first', 'error'); return; }
   if (!currentPanel.length) { toast('Panel is empty', 'error'); return; }
 
-  const { data: panel, error } = await db.from('panels').insert({ name, user_name: userName }).select().single();
-  if (error) { toast('Error: '+error.message, 'error'); return; }
+  // Check if panel with same name+user already exists → overwrite
+  const { data: existing } = await db.from('panels')
+    .select('id').eq('name', name).eq('user_name', userName).maybeSingle();
+
+  let panelId;
+  if (existing) {
+    // Delete old rows and update timestamp
+    await db.from('panel_rows').delete().eq('panel_id', existing.id);
+    await db.from('panels').update({ updated_at: new Date().toISOString() }).eq('id', existing.id);
+    panelId = existing.id;
+  } else {
+    const { data: panel, error } = await db.from('panels')
+      .insert({ name, user_name: userName }).select().single();
+    if (error) { toast('Error: '+error.message, 'error'); return; }
+    panelId = panel.id;
+  }
 
   const rowsToInsert = currentPanel.map((r,i) => ({
-    panel_id:      panel.id,
+    panel_id:      panelId,
     marker:        r.marker        || '',
     code:          r.code          || '',
     fluorochrome:  r.fluorochrome  || '',
@@ -1344,21 +1359,16 @@ async function savePanel() {
   const { error: rowError } = await db.from('panel_rows').insert(rowsToInsert);
   if (rowError) { toast('Error saving rows: '+rowError.message, 'error'); return; }
 
-  // Save live/dead row if present
   if (currentLiveDead.length) {
     const ld = currentLiveDead[0];
     await db.from('panel_rows').insert({
-      panel_id: panel.id,
-      marker: '☠️ ' + ld.name,
-      code: 'LIVE/DEAD',
-      fluorochrome: ld.fluorochrome,
-      dilution: ld.dilution || '',
-      notes: 'live_dead',
-      sort_order: 999
+      panel_id: panelId, marker: '☠️ ' + ld.name, code: 'LIVE/DEAD',
+      fluorochrome: ld.fluorochrome, dilution: ld.dilution||'',
+      notes: 'live_dead', sort_order: 999
     });
   }
 
-  toast(`"${name}" saved — ${rowsToInsert.length} markers`, 'success');
+  toast(`"${name}" ${existing ? 'updated' : 'saved'} — ${rowsToInsert.length} markers`, 'success');
 }
 
 // ── SAVED PANELS ──────────────────────────────────────────
@@ -1658,19 +1668,45 @@ let tissueList         = [];
 async function loadTissues() {
   const { data } = await db.from('tissues').select('*').order('name');
   tissueList = data || [];
-  const sel = document.getElementById('dl-tissue');
-  if (sel) {
-    sel.innerHTML = '<option value="">Select tissue...</option>'
-      + tissueList.map(t => `<option value="${t.name}">${t.name}</option>`).join('')
-      + '<option value="__new__">+ Add new tissue...</option>';
-  }
+  const opts = '<option value="">Select tissue...</option>'
+    + tissueList.map(t => `<option value="${t.name}">${t.name}</option>`).join('')
+    + '<option value="__new__">+ Add new tissue...</option>';
+  const sel1 = document.getElementById('dl-tissue');
+  const sel2 = document.getElementById('exp-tissue');
+  if (sel1) sel1.innerHTML = opts;
+  if (sel2) sel2.innerHTML = opts;
 }
 
 async function usePanelForExperiment(panelId, panelName) {
   const { data } = await db.from('panel_rows').select('*').eq('panel_id', panelId).order('sort_order');
   if (!data) { toast('Could not load panel', 'error'); return; }
 
-  experimentPanel = { id: panelId, name: panelName, rows: data.filter(r => r.notes !== 'live_dead') };
+  const ldRow = data.find(r => r.notes === 'live_dead');
+  const rows  = data.filter(r => r.notes !== 'live_dead');
+
+  // Enrich rows with fluorochrome lookup data
+  const enriched = rows.map(r => {
+    const fi = getFluorInfo(r.fluorochrome);
+    return { ...r,
+      laser:    fi?.excitation_laser  || r.laser    || '',
+      emission: fi?.emission_peak     || r.emission  || '',
+      symphony: fi?.symphony_detector || r.symphony  || '',
+      aurora:   fi?.aurora_channel    || r.aurora    || '',
+    };
+  });
+
+  let liveDead = null;
+  if (ldRow) {
+    const fi = getFluorInfo(ldRow.fluorochrome);
+    liveDead = {
+      name:        ldRow.marker.replace('☠️ ',''),
+      fluorochrome:ldRow.fluorochrome,
+      laser:       fi?.excitation_laser || '',
+      dilution:    ldRow.dilution || ''
+    };
+  }
+
+  experimentPanel = { id: panelId, name: panelName, rows: enriched, liveDead };
   experimentFMOs  = new Set();
 
   document.getElementById('exp-panel-name').textContent = 'Panel: ' + panelName;
@@ -1687,7 +1723,7 @@ function renderFMOSelector() {
   const surface = experimentPanel.rows.filter(r => (r.staining_type||'surface') === 'surface');
   if (!surface.length) { el.innerHTML = '<div style="color:var(--muted);font-size:13px">No surface markers loaded</div>'; return; }
   el.innerHTML = surface.map(r => `
-    <label style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;">
+    <label style="display:flex;align-items:center;gap:6px;padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;">
       <input type="checkbox" onchange="toggleFMO('${r.marker}')" ${experimentFMOs.has(r.marker)?'checked':''}>
       ${r.marker}
     </label>`).join('');
@@ -1706,8 +1742,7 @@ function calcTubeCount() {
   const marginVal  = parseFloat(document.getElementById('exp-margin-value')?.value) || 0;
   const vol        = parseFloat(document.getElementById('exp-volume')?.value) || 50;
   const mixType    = document.getElementById('exp-mix-type')?.value || '1x';
-
-  let tubes = samples + fmos;
+  let tubes    = samples + fmos;
   let totalVol = tubes * vol * (mixType === '2x' ? 2 : 1);
   if (marginType === 'ul')  totalVol += marginVal;
   if (marginType === 'pct') totalVol *= (1 + marginVal/100);
@@ -1715,62 +1750,146 @@ function calcTubeCount() {
 }
 
 function calcAntibodyVol(dilution, totalVol) {
-  // Parse dilution string e.g. "1:200" -> 1/200
   if (!dilution) return null;
   const parts = dilution.toString().split(':');
   if (parts.length !== 2) return null;
   const ratio = parseFloat(parts[1]);
   if (!ratio) return null;
-  const abVol  = totalVol / ratio;
-  return { abVol: Math.round(abVol * 100)/100, bufVol: Math.round((totalVol - abVol)*100)/100 };
+  const abVol = totalVol / ratio;
+  return { abVol: Math.round(abVol*100)/100, bufVol: Math.round((totalVol-abVol)*100)/100 };
 }
+
+const LASER_ORDER  = {355:0, 405:1, 488:2, 561:3, 638:4};
+const LASER_LABELS = {355:'355 nm — UV', 405:'405 nm — Violet', 488:'488 nm — Blue', 561:'561 nm — Green', 638:'638 nm — Red'};
+const LASER_BG     = {355:'#3b076422', 405:'#4a1d9622', 488:'#1e3a5f22', 561:'#14532d22', 638:'#7f1d1d22'};
+const LASER_TEXT   = {355:'var(--uv)', 405:'var(--violet)', 488:'var(--blue)', 561:'var(--green)', 638:'var(--red)'};
 
 function recalcScheme() {
   if (!experimentPanel) return;
-
   const { tubes, totalVol } = calcTubeCount();
   document.getElementById('exp-tube-count').textContent = tubes + ' tubes · ' + totalVol + ' µL total';
 
-  const surface = experimentPanel.rows.filter(r => (r.staining_type||'surface') === 'surface');
-  const ic      = experimentPanel.rows.filter(r => r.staining_type === 'intracellular');
+  // Sort rows
+  const sorted = [...experimentPanel.rows].sort((a,b) => {
+    const ta = (a.staining_type==='intracellular')?1:0;
+    const tb = (b.staining_type==='intracellular')?1:0;
+    if (ta!==tb) return ta-tb;
+    const la = LASER_ORDER[a.laser]??9, lb = LASER_ORDER[b.laser]??9;
+    if (la!==lb) return la-lb;
+    return (a.emission||999)-(b.emission||999);
+  });
 
-  function renderSchemeRows(rows, tbodyId) {
-    const tbody = document.getElementById(tbodyId);
-    if (!tbody) return;
-    tbody.innerHTML = rows.map(r => {
-      const isFMO = experimentFMOs.has(r.marker);
-      const calc  = calcAntibodyVol(r.dilution, totalVol);
-      return `<tr ${isFMO ? 'style="background:#1a3a2a"' : ''}>
-        <td><strong>${r.marker}</strong> ${isFMO ? '<span style="font-size:10px;background:var(--green);color:#fff;padding:1px 5px;border-radius:3px;margin-left:4px">FMO</span>' : ''}</td>
-        <td style="font-family:var(--mono);font-size:11px;color:var(--accent)">${r.code||''}</td>
-        <td>${r.fluorochrome||''}</td>
-        <td>
-          <input type="text" class="dilution-input" style="width:80px" placeholder="1:200"
+  const surfaceRows = sorted.filter(r => (r.staining_type||'surface')==='surface');
+  const icRows      = sorted.filter(r => r.staining_type==='intracellular');
+  const liveDead    = experimentPanel.liveDead || null;
+
+  function renderSection(rows, title, titleColor) {
+    if (!rows.length) return '';
+    // Group by laser
+    const groups = {};
+    rows.forEach(r => { const k=r.laser||'?'; if(!groups[k]) groups[k]=[]; groups[k].push(r); });
+    const laserKeys = Object.keys(groups).sort((a,b)=>(LASER_ORDER[a]??9)-(LASER_ORDER[b]??9));
+
+    let html = `<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${titleColor};margin-bottom:10px;">${title}</div>`;
+    html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:20px;">`;
+    html += `<table class="db-table"><thead><tr><th>Marker</th><th>Code</th><th>Fluorochrome</th><th>Dilution</th><th>µL antibody</th><th>µL buffer</th><th>Titrated</th><th></th></tr></thead><tbody>`;
+
+    laserKeys.forEach(laser => {
+      const lRows  = groups[laser];
+      const lLabel = LASER_LABELS[laser]||laser+' nm';
+      const lBg    = LASER_BG[laser]||'transparent';
+      const lText  = LASER_TEXT[laser]||'var(--muted)';
+
+      html += `<tr><td colspan="8" style="padding:5px 12px;background:${lBg};font-size:11px;font-weight:700;color:${lText};text-transform:uppercase;letter-spacing:0.4px;">${lLabel}</td></tr>`;
+
+      lRows.forEach(r => {
+        const isFMO = experimentFMOs.has(r.marker);
+        const calc  = calcAntibodyVol(r.dilution, totalVol);
+        html += `<tr>
+          <td><strong>${r.marker}</strong>${isFMO?'<span style="font-size:10px;background:var(--green);color:#fff;padding:1px 5px;border-radius:3px;margin-left:6px">FMO</span>':''}</td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--accent)">${r.code||''}</td>
+          <td>${r.fluorochrome||''}</td>
+          <td><input type="text" class="dilution-input" style="width:75px" placeholder="1:200"
             value="${r.dilution||''}"
-            onchange="updateExpDilution('${r.marker}','${r.staining_type||'surface'}',this.value)">
-        </td>
-        <td style="font-weight:600;color:${calc ? 'var(--accent)' : 'var(--muted)'}">
-          ${calc ? calc.abVol + ' µL' : '—'}
-        </td>
-        <td style="color:var(--muted)">${calc ? calc.bufVol + ' µL' : '—'}</td>
-        <td style="font-weight:600">${calc ? totalVol + ' µL' : '—'}</td>
-        <td>
-          <button class="btn-icon" style="font-size:10px;padding:2px 6px"
-            onclick="showDilutionLog('${r.code}','${r.marker}','${r.fluorochrome}')"
-            title="See what others used">📊</button>
-        </td>
-      </tr>`;
-    }).join('');
+            onchange="updateExpDilution('${r.marker}','${r.staining_type||'surface'}',this.value)"></td>
+          <td style="font-weight:600;color:${calc?'var(--accent)':'var(--muted)'}">${calc?calc.abVol+' µL':'—'}</td>
+          <td style="color:var(--muted)">${calc?calc.bufVol+' µL':'—'}</td>
+          <td style="text-align:center">
+            <input type="checkbox" title="Log as titrated" style="width:15px;height:15px;cursor:pointer"
+              onchange="markTitrated('${r.code}','${r.marker}','${r.fluorochrome}',this.checked)">
+          </td>
+          <td><button class="btn-icon" style="font-size:10px;padding:2px 5px"
+            onclick="showDilutionLog('${r.code}','${r.marker}','${r.fluorochrome}')">📊</button></td>
+        </tr>`;
+      });
+
+      // Buffer total footer per laser group
+      const abTot  = lRows.reduce((s,r)=>{ const c=calcAntibodyVol(r.dilution,totalVol); return s+(c?c.abVol:0); },0);
+      const bufTot = lRows.reduce((s,r)=>{ const c=calcAntibodyVol(r.dilution,totalVol); return s+(c?c.bufVol:0); },0);
+      if (bufTot>0||abTot>0) {
+        html += `<tr><td colspan="8" style="padding:5px 12px;background:${lBg};border-top:1px solid var(--border);">
+          <span style="font-size:11px;color:${lText};font-weight:600">
+            Subtotal: ${Math.round(abTot*100)/100} µL antibodies · ${Math.round(bufTot*100)/100} µL buffer
+          </span></td></tr>`;
+      }
+    });
+
+    html += '</tbody></table></div>';
+    return html;
   }
 
-  const surfaceSection = document.getElementById('exp-surface-section');
-  const icSection      = document.getElementById('exp-ic-section');
+  // Live/Dead
+  let ldHtml = '';
+  if (liveDead) {
+    const calc = calcAntibodyVol(liveDead.dilution, totalVol);
+    ldHtml = `<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--green);margin-bottom:10px;">☠️ Live/Dead Stain</div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:20px;">
+    <table class="db-table"><thead><tr><th>Marker</th><th>Fluorochrome</th><th>Laser</th><th>Dilution</th><th>µL antibody</th><th>µL buffer</th></tr></thead>
+    <tbody><tr>
+      <td><strong>☠️ ${liveDead.name}</strong></td><td>${liveDead.fluorochrome||''}</td>
+      <td>${liveDead.laser?' '+liveDead.laser+' nm':''}</td>
+      <td><input type="text" class="dilution-input" style="width:75px" placeholder="1:500"
+        value="${liveDead.dilution||''}" onchange="experimentPanel.liveDead.dilution=this.value;recalcScheme()"></td>
+      <td style="font-weight:600;color:var(--accent)">${calc?calc.abVol+' µL':'—'}</td>
+      <td style="color:var(--muted)">${calc?calc.bufVol+' µL':'—'}</td>
+    </tr></tbody></table></div>`;
+  }
 
-  if (surface.length) { surfaceSection.style.display='block'; renderSchemeRows(surface,'exp-surface-tbody'); }
-  else surfaceSection.style.display='none';
+  document.getElementById('exp-scheme-container').innerHTML = ldHtml
+    + renderSection(surfaceRows,'Surface Staining','var(--muted)')
+    + renderSection(icRows,'Intracellular Staining','var(--violet)');
 
-  if (ic.length) { icSection.style.display='block'; renderSchemeRows(ic,'exp-ic-tbody'); }
-  else icSection.style.display='none';
+  renderFMOGrid(surfaceRows);
+}
+
+function renderFMOGrid(surfaceRows) {
+  const section = document.getElementById('exp-fmo-grid-section');
+  const table   = document.getElementById('exp-fmo-grid-table');
+  const fmoList = [...experimentFMOs];
+  if (!fmoList.length) { section.style.display='none'; return; }
+  section.style.display='block';
+  const markers = surfaceRows.map(r=>r.marker);
+  let html = '<thead><tr><th>FMO Tube</th>'+markers.map(m=>`<th style="font-size:10px">${m}</th>`).join('')+'</tr></thead><tbody>';
+  fmoList.forEach(fmo => {
+    html += `<tr><td><strong>FMO ${fmo}</strong></td>`;
+    markers.forEach(m => {
+      const inc = m!==fmo;
+      html += `<td style="text-align:center;color:${inc?'var(--green)':'var(--red)'}">${inc?'✓':'—'}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+}
+
+function markTitrated(code, marker, fluorochrome, checked) {
+  if (!checked) return;
+  const row = experimentPanel?.rows?.find(r => r.marker===marker);
+  showDilutionLog(code, marker, fluorochrome);
+  setTimeout(() => {
+    if (row?.dilution) document.getElementById('dl-dilution').value = row.dilution;
+    document.getElementById('dl-titrated').value = 'true';
+  }, 400);
 }
 
 function updateExpDilution(marker, type, value) {
