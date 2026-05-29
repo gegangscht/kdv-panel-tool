@@ -535,7 +535,14 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
           <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px">Tissues:</span>
           <div id="panel-tissue-selector" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
           <span style="font-size:11px;color:var(--muted);margin-left:8px">|</span>
-          <span style="font-size:11px;color:var(--muted)">When saving, Titrated markers will be logged to the dilution database</span>
+          <span style="font-size:11px;color:var(--muted)">Titrated markers logged on save</span>
+        </div>
+        <div style="padding:8px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;white-space:nowrap">Panel notes:</span>
+          <input type="text" class="search-input" id="panel-notes"
+            placeholder="Optional notes about this panel..."
+            oninput="localStorage.setItem('kdv_panel_notes', this.value)"
+            style="font-size:12px;padding:5px 10px;">
         </div>
         <div class="panel-table-wrap">
           <table class="panel-table">
@@ -1084,6 +1091,7 @@ function showView(name) {
   if (name === 'landing')    loadActivity();
   if (name === 'experiment') { loadSavedExperimentsList(); loadTissues(); }
   if (name === 'dilutions')  loadDilutionDB();
+  if (name === 'database')   { filterDB(); document.getElementById('db-count').textContent = allAntibodies.length + ' antibodies'; }
 }
 
 // ── PANEL BUILDER ─────────────────────────────────────────
@@ -1392,6 +1400,11 @@ function restorePanelFromLocal() {
     if (tissues) {
       panelTissues = JSON.parse(tissues);
     }
+    const notes = localStorage.getItem('kdv_panel_notes');
+    if (notes) {
+      const el = document.getElementById('panel-notes');
+      if (el) el.value = notes;
+    }
   } catch(e) {}
 }
 
@@ -1479,11 +1492,13 @@ async function savePanel() {
   if (existing) {
     // Delete old rows and update timestamp
     await db.from('panel_rows').delete().eq('panel_id', existing.id);
-    await db.from('panels').update({ updated_at: new Date().toISOString() }).eq('id', existing.id);
+    const pNotes2 = document.getElementById('panel-notes')?.value || '';
+    await db.from('panels').update({ updated_at: new Date().toISOString(), notes: pNotes2 }).eq('id', existing.id);
     panelId = existing.id;
   } else {
+    const pNotes = document.getElementById('panel-notes')?.value || '';
     const { data: panel, error } = await db.from('panels')
-      .insert({ name, user_name: userName }).select().single();
+      .insert({ name, user_name: userName, notes: pNotes }).select().single();
     if (error) { toast('Error: '+error.message, 'error'); return; }
     panelId = panel.id;
   }
@@ -1617,8 +1632,10 @@ async function loadPanelIntoBuilder(panelId) {
   });
   savePanelToLocal();
   renderPanel();
+  // Restore panel notes if saved
+  // (notes not stored per panel_row, would need panels table query — skip for now)
   showView('builder');
-  toast('Panel loaded — ' + data.length + ' markers', 'success');
+  toast('Panel loaded — ' + (data.length) + ' markers', 'success');
 }
 
 async function deletePanel(id) {
@@ -2033,8 +2050,15 @@ async function exportAndLogOrder() {
     toast(`Exported & logged ${checked.length} antibodies`, 'success');
   }
 
+  // Remove exported items from sign-out log
+  for (const r of checked) {
+    await db.from('signout_log').delete().eq('antibody_marker', r.antibody_marker)
+      .eq('antibody_fluorochrome', r.antibody_fluorochrome || '');
+  }
+
   closeModal('order-modal');
   loadOrderHistory();
+  loadSignoutLog();  // refresh sign-out log
 }
 
 async function loadOrderHistory() {
