@@ -444,29 +444,61 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <div>
       <div class="panel-section">
         <div class="panel-section-header">🔍 Search Antibodies</div>
-        <div class="search-inputs">
-          <div>
-            <div class="label-small">Search by marker</div>
-            <input type="text" class="search-input" id="builder-search" placeholder="e.g. CD8, FoxP3..." oninput="searchAntibodies()">
+
+        <!-- Search tabs -->
+        <div style="display:flex;border-bottom:1px solid var(--border);">
+          <button class="search-tab active" id="tab-marker" onclick="switchSearchTab('marker')">By Marker</button>
+          <button class="search-tab" id="tab-fluor" onclick="switchSearchTab('fluor')">By Fluorochrome</button>
+        </div>
+
+        <!-- Marker search -->
+        <div id="search-panel-marker">
+          <div class="search-inputs">
+            <div>
+              <div class="label-small">Marker name</div>
+              <input type="text" class="search-input" id="builder-search"
+                placeholder="e.g. CD8, FoxP3..." oninput="searchByMarker()">
+            </div>
+            <div>
+              <div class="label-small">Filter by laser color</div>
+              <select class="search-input" id="builder-color" onchange="searchByMarker()">
+                <option value="">All colors</option>
+                <option value="Blue">Blue (488 nm)</option>
+                <option value="Green">Green (561 nm)</option>
+                <option value="Red">Red (638 nm)</option>
+                <option value="Violet">Violet (405 nm)</option>
+                <option value="Ultra Violet">Ultra Violet (355 nm)</option>
+              </select>
+            </div>
           </div>
-          <div>
-            <div class="label-small" style="color:#f87171">Exclude</div>
-            <input type="text" class="search-input exclude" id="builder-exclude" placeholder='e.g. "45 49" removes CD45, CD49' oninput="searchAntibodies()">
-          </div>
-          <div>
-            <div class="label-small">Filter by laser color</div>
-            <select class="search-input" id="builder-color" onchange="searchAntibodies()">
-              <option value="">All colors</option>
-              <option value="Blue">Blue (488 nm)</option>
-              <option value="Green">Green (561 nm)</option>
-              <option value="Red">Red (638 nm)</option>
-              <option value="Violet">Violet (405 nm)</option>
-              <option value="Ultra Violet">Ultra Violet (355 nm)</option>
-            </select>
+          <div class="result-list" id="search-results-marker">
+            <div class="empty-state">Type a marker name to search</div>
           </div>
         </div>
-        <div class="result-list" id="search-results">
-          <div class="empty-state">Type to search antibodies</div>
+
+        <!-- Fluorochrome search -->
+        <div id="search-panel-fluor" style="display:none">
+          <div class="search-inputs">
+            <div>
+              <div class="label-small">Fluorochrome name</div>
+              <input type="text" class="search-input" id="fluor-search"
+                placeholder="e.g. APC, BV421..." oninput="searchByFluor()">
+            </div>
+            <div>
+              <div class="label-small">Or pick laser color</div>
+              <select class="search-input" id="fluor-color-filter" onchange="searchByFluor()">
+                <option value="">All colors</option>
+                <option value="Blue">Blue (488 nm)</option>
+                <option value="Green">Green (561 nm)</option>
+                <option value="Red">Red (638 nm)</option>
+                <option value="Violet">Violet (405 nm)</option>
+                <option value="Ultra Violet">Ultra Violet (355 nm)</option>
+              </select>
+            </div>
+          </div>
+          <div class="result-list" id="search-results-fluor">
+            <div class="empty-state">Type a fluorochrome or pick a laser color</div>
+          </div>
         </div>
       </div>
     </div>
