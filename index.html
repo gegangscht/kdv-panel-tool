@@ -868,7 +868,14 @@ let soSelected    = null;
 
 // ── USER MANAGEMENT ───────────────────────────────────────
 async function loadUsers() {
-  const { data } = await db.from('users').select('*').order('name');
+  let data = null;
+  try {
+    const result = await db.from('users').select('*').order('name');
+    data = result.data;
+  } catch(e) {
+    document.getElementById('user-grid').innerHTML = '<div style="color:var(--red);font-size:13px;grid-column:1/-1">Could not connect to database. Check your internet connection.</div>';
+    return;
+  }
   const grid = document.getElementById('user-grid');
 
   if (!data?.length) {
@@ -906,7 +913,7 @@ function loginAs(name) {
   document.getElementById('welcome-name').textContent = name.split(' ')[0];
   restorePanelFromLocal();
   initLiveDeadPicker();
-  await loadTissues();
+  loadTissues().catch(e => console.warn('tissues:', e));  // non-blocking
   showView('landing');
   loadActivity();
 }
@@ -922,7 +929,11 @@ function logout() {
 
 // ── INIT ──────────────────────────────────────────────────
 async function init() {
-  await Promise.all([loadAntibodies(), loadFluorochromes()]);
+  try {
+    await Promise.all([loadAntibodies(), loadFluorochromes()]);
+  } catch(e) {
+    console.warn('Data load error:', e);
+  }
   const saved = localStorage.getItem('kdv_user');
   if (saved) {
     loginAs(saved);
