@@ -372,7 +372,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   <button class="nav-btn" onclick="showView('experiment')">Experiment</button>
   <button class="nav-btn" onclick="showView('dilutions')">Dilution DB</button>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v29</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v31</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name"></span>
@@ -1054,13 +1054,56 @@ async function init() {
 }
 
 // ── DATA ──────────────────────────────────────────────────
+// ── DATABASE ──────────────────────────────────────────────
+function filterDB() {
+  const term  = document.getElementById('db-search')?.value.trim().toLowerCase() || '';
+  const color = document.getElementById('db-color-filter')?.value || '';
+  dbFiltered = allAntibodies.filter(a => {
+    const match = !term ||
+      (a.marker||'').toLowerCase().includes(term) ||
+      (a.fluorochrome||'').toLowerCase().includes(term) ||
+      (a.code||'').toLowerCase().includes(term) ||
+      (a.clone||'').toLowerCase().includes(term);
+    return match && (!color || a.box_color === color);
+  });
+  renderDB();
+}
+
+function renderDB() {
+  const tbody = document.getElementById('db-tbody');
+  if (!tbody) return;
+  if (!dbFiltered.length) {
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No antibodies found</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = dbFiltered.map(a => {
+    const bc = (a.box_color||'').replace(' ','-');
+    return `<tr>
+      <td><span style="font-family:var(--mono);font-size:12px;color:var(--accent)">${a.code||''}</span></td>
+      <td><strong>${a.marker||''}</strong></td>
+      <td>${a.fluorochrome||''}</td>
+      <td><span class="laser-badge badge-${bc}">${a.box_color||''}</span></td>
+      <td style="color:var(--muted)">${a.clone||''}</td>
+      <td style="color:var(--muted)">${a.company||''}</td>
+      <td style="color:var(--muted);font-size:12px">${a.remarks||''}</td>
+      <td style="white-space:nowrap">
+        <button class="btn-icon" onclick='openEditAntibody(${JSON.stringify(a)})'>Edit</button>
+        <button class="btn-icon danger" onclick="deleteAntibody('${a.id}')">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
 async function loadAntibodies() {
-  const { data } = await db.from('antibodies').select('*').order('marker');
+  console.log('loadAntibodies called');
+  const { data, error } = await db.from('antibodies').select('*').order('marker');
+  console.log('loadAntibodies result:', data?.length, 'error:', error);
   if (data) {
     allAntibodies = data;
     dbFiltered = [...data];
+    const countEl = document.getElementById('db-count');
+    if (countEl) countEl.textContent = `${data.length} antibodies`;
     renderDB();
-    document.getElementById('db-count').textContent = `${data.length} antibodies`;
   }
 }
 
