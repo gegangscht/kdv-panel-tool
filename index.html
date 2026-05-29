@@ -677,7 +677,7 @@ async function loadUsers() {
   }
 
   grid.innerHTML = data.map(u => `
-    <button class="user-btn" onclick="loginAs(${JSON.stringify(u.name)})">
+    <button class="user-btn" onclick="loginAs(this.dataset.name)" data-name="${u.name.replace(/"/g,'&quot;')}">
       <div class="user-avatar-lg">${u.name.charAt(0).toUpperCase()}</div>
       ${u.name}
     </button>`).join('');
