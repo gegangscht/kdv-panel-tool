@@ -506,7 +506,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
       <div class="panel-section">
         <div class="panel-section-header">🧬 Your Panel</div>
         <div class="panel-name-row">
-          <input type="text" class="panel-name-input" id="panel-name" placeholder="Panel name (e.g. Treg panel v1)">
+          <input type="text" class="panel-name-input" id="panel-name" placeholder="Panel name (e.g. Treg panel v1)" oninput="localStorage.setItem('kdv_panel_name', this.value)">
           <button class="btn-clear" onclick="clearPanel()">Clear</button>
           <button class="btn-save" onclick="savePanel()">💾 Save</button>
         </div>
@@ -704,6 +704,7 @@ function loginAs(name) {
   document.getElementById('nav-name').textContent = name;
   document.getElementById('nav-avatar').textContent = name.charAt(0).toUpperCase();
   document.getElementById('welcome-name').textContent = name.split(' ')[0];
+  restorePanelFromLocal();
   showView('landing');
   loadActivity();
 }
@@ -942,16 +943,40 @@ function addToPanel(ab) {
     brightness: fi?.brightness||'', box_color: ab.box_color||'',
     dilution: '', notes: ''
   });
+  savePanelToLocal();
   renderPanel();
   toast(`${ab.marker} added`, 'success');
 }
 
-function removeFromPanel(i) { currentPanel.splice(i,1); renderPanel(); }
+function removeFromPanel(i) {
+  currentPanel.splice(i,1);
+  savePanelToLocal();
+  renderPanel();
+}
 
 function clearPanel() {
   if (!currentPanel.length) return;
   if (!confirm('Clear the entire panel?')) return;
-  currentPanel = []; renderPanel();
+  currentPanel = [];
+  savePanelToLocal();
+  renderPanel();
+}
+
+function savePanelToLocal() {
+  localStorage.setItem('kdv_current_panel', JSON.stringify(currentPanel));
+  localStorage.setItem('kdv_panel_name', document.getElementById('panel-name')?.value || '');
+}
+
+function restorePanelFromLocal() {
+  try {
+    const saved = localStorage.getItem('kdv_current_panel');
+    const name  = localStorage.getItem('kdv_panel_name');
+    if (saved) {
+      currentPanel = JSON.parse(saved);
+      if (name) document.getElementById('panel-name').value = name;
+      renderPanel();
+    }
+  } catch(e) {}
 }
 
 function laserToRowClass(laser) {
@@ -981,7 +1006,7 @@ function renderPanel() {
       <td class="panel-detector">${r.laser ? r.laser+' nm' : ''}</td>
       <td class="panel-detector">${r.symphony}</td>
       <td class="panel-detector">${r.aurora}</td>
-      <td><input type="text" class="dilution-input" placeholder="1:100" value="${r.dilution}" onchange="currentPanel[${i}].dilution=this.value"></td>
+      <td><input type="text" class="dilution-input" placeholder="1:100" value="${r.dilution}" onchange="currentPanel[${i}].dilution=this.value; savePanelToLocal()"></td>
       <td><button class="btn-remove" onclick="removeFromPanel(${i})">✕</button></td>
     </tr>`;
   }).join('');
@@ -1024,19 +1049,29 @@ async function loadSavedPanels() {
 }
 
 async function loadPanelIntoBuilder(panelId) {
-  const { data } = await db.from('panel_rows').select('*').eq('panel_id', panelId).order('sort_order');
-  if (data) {
-    currentPanel = data.map(r => {
-      const fi = getFluorInfo(r.fluorochrome);
-      return { marker:r.marker, code:r.code, fluorochrome:r.fluorochrome,
-        laser:fi?.excitation_laser||'', emission:fi?.emission_peak||'',
-        symphony:fi?.symphony_detector||'', aurora:fi?.aurora_channel||'',
-        brightness:fi?.brightness||'', box_color:'', dilution:r.dilution||'', notes:r.notes||'' };
-    });
-    renderPanel();
-    showView('builder');
-    toast('Panel loaded!', 'success');
-  }
+  const { data, error } = await db.from('panel_rows').select('*').eq('panel_id', panelId).order('sort_order');
+  if (error) { toast('Error loading panel: '+error.message, 'error'); return; }
+  if (!data || !data.length) { toast('Panel appears to be empty', 'error'); return; }
+  currentPanel = data.map(r => {
+    const fi = getFluorInfo(r.fluorochrome);
+    return {
+      marker:      r.marker      || '',
+      code:        r.code        || '',
+      fluorochrome:r.fluorochrome|| '',
+      laser:       fi?.excitation_laser   || '',
+      emission:    fi?.emission_peak      || '',
+      symphony:    fi?.symphony_detector  || '',
+      aurora:      fi?.aurora_channel     || '',
+      brightness:  fi?.brightness         || '',
+      box_color:   '',
+      dilution:    r.dilution || '',
+      notes:       r.notes    || ''
+    };
+  });
+  savePanelToLocal();
+  renderPanel();
+  showView('builder');
+  toast('Panel loaded — ' + data.length + ' markers', 'success');
 }
 
 async function deletePanel(id) {
