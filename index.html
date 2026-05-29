@@ -323,6 +323,97 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── MOBILE NAV ── */
+.nav-links {
+  display: flex; gap: 2px; align-items: center; flex-wrap: nowrap; overflow-x: auto;
+}
+.nav-hamburger { display: none; }
+.nav-name-text { display: none; }
+
+@media (max-width: 768px) {
+  /* Nav */
+  nav { padding: 0 12px; position: relative; flex-wrap: wrap; height: auto; min-height: 48px; }
+  .nav-logo { font-size: 15px; margin-right: 8px; padding: 12px 0; }
+  .nav-links {
+    display: none; flex-direction: column; width: 100%;
+    background: var(--surface); border-top: 1px solid var(--border);
+    padding: 8px 0; gap: 2px; order: 10;
+  }
+  .nav-links.open { display: flex; }
+  .nav-btn { text-align: left; padding: 10px 16px; font-size: 14px; border-radius: 0; }
+  .nav-hamburger {
+    display: flex; align-items: center; justify-content: center;
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-size: 18px; width: 36px; height: 36px; cursor: pointer;
+    margin: 6px 0;
+  }
+  .nav-spacer { flex: 1; }
+  .nav-user { gap: 6px; }
+
+  /* Views */
+  .view { padding: 16px 12px; }
+
+  /* Grids → single column */
+  .builder-layout,
+  .signout-layout { grid-template-columns: 1fr !important; }
+  .action-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .panels-grid { grid-template-columns: 1fr; }
+
+  /* Tables — horizontal scroll */
+  .db-table-wrap,
+  .panel-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Experiment setup grid */
+  #experiment-view [style*="grid-template-columns:repeat(auto-fill,minmax(140px"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Panel name row wrap */
+  .panel-name-row { flex-wrap: wrap !important; }
+  .panel-name-input { min-width: 0 !important; flex: 1 1 100% !important; }
+
+  /* Search inputs full width */
+  .search-input { font-size: 16px; } /* prevents iOS zoom */
+  .form-input   { font-size: 16px; }
+  input[type="text"], input[type="number"], select { font-size: 16px; }
+
+  /* Modal full width */
+  .modal { padding: 20px; margin: 12px; width: calc(100% - 24px); max-width: none !important; }
+
+  /* Login card */
+  .login-card { padding: 24px 16px; }
+
+  /* Saved panel cards actions wrap */
+  .sp-actions { flex-wrap: wrap; }
+
+  /* DB toolbar wrap */
+  .db-toolbar { flex-wrap: wrap; }
+  .db-toolbar input { min-width: 100%; }
+
+  /* Experiment scheme tables — make scrollable */
+  #exp-scheme-container .db-table-wrap,
+  #exp-scheme-container > div { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* FMO selector wrap */
+  #fmo-selector { flex-wrap: wrap; }
+
+  /* Page header stack */
+  .page-header { flex-direction: column; align-items: flex-start; }
+  .page-header-actions { margin-left: 0; flex-wrap: wrap; }
+
+  /* User grid on login */
+  .user-grid { grid-template-columns: 1fr 1fr; }
+
+  /* Hide version tag */
+  nav > div[style*="color:var(--border)"] { display: none; }
+}
+
+@media (max-width: 480px) {
+  .action-grid { grid-template-columns: 1fr; }
+  .user-grid   { grid-template-columns: 1fr 1fr; }
+  .nav-name-text { display: none; }
+}
 .ld-chip {
   padding: 5px 10px; background: var(--surface2); border: 1px solid var(--border);
   border-radius: 6px; color: var(--muted); font-family: var(--font); font-size: 11px;
@@ -364,20 +455,23 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 
 <nav>
   <div class="nav-logo">KDV <span>Panel</span></div>
-  <button class="nav-btn" onclick="showView('landing')">Home</button>
-  <button class="nav-btn" onclick="showView('builder')">Panel Builder</button>
-  <button class="nav-btn" onclick="showView('saved')">Saved Panels</button>
-  <button class="nav-btn" onclick="showView('database')">Database</button>
-  <button class="nav-btn" onclick="showView('signout')">Sign-out Log</button>
-  <button class="nav-btn" onclick="showView('experiment')">Experiment</button>
-  <button class="nav-btn" onclick="showView('dilutions')">Dilution DB</button>
+  <div id="nav-links" class="nav-links">
+    <button class="nav-btn" onclick="showView('landing');closeMenu()">Home</button>
+    <button class="nav-btn" onclick="showView('builder');closeMenu()">Panel Builder</button>
+    <button class="nav-btn" onclick="showView('saved');closeMenu()">Saved Panels</button>
+    <button class="nav-btn" onclick="showView('database');closeMenu()">Database</button>
+    <button class="nav-btn" onclick="showView('signout');closeMenu()">Sign-out Log</button>
+    <button class="nav-btn" onclick="showView('experiment');closeMenu()">Experiment</button>
+    <button class="nav-btn" onclick="showView('dilutions');closeMenu()">Dilution DB</button>
+  </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v31</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v32</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
-    <span id="nav-name"></span>
-    <button class="btn-icon" onclick="logout()" style="font-size:11px">Switch user</button>
+    <span id="nav-name" class="nav-name-text"></span>
+    <button class="btn-icon" onclick="logout()" style="font-size:11px">Switch</button>
   </div>
+  <button class="nav-hamburger" onclick="toggleMenu()" id="nav-hamburger">☰</button>
 </nav>
 
 <div id="toast"></div>
@@ -1877,6 +1971,19 @@ function openModal(id)  { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if(e.target===o) o.classList.remove('open'); }));
 
+function toggleMenu() {
+  const links = document.getElementById('nav-links');
+  const btn   = document.getElementById('nav-hamburger');
+  links.classList.toggle('open');
+  btn.textContent = links.classList.contains('open') ? '✕' : '☰';
+}
+function closeMenu() {
+  const links = document.getElementById('nav-links');
+  const btn   = document.getElementById('nav-hamburger');
+  if (links) { links.classList.remove('open'); }
+  if (btn)   { btn.textContent = '☰'; }
+}
+
 let toastTimeout;
 function toast(msg, type='') {
   const el = document.getElementById('toast');
@@ -2317,7 +2424,7 @@ function recalcScheme() {
     const laserKeys = Object.keys(groups).sort((a,b)=>(LASER_ORDER[a]??9)-(LASER_ORDER[b]??9));
 
     let html = `<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${titleColor};margin-bottom:10px;">${title}</div>`;
-    html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:20px;">`;
+    html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:0;overflow-x:auto;-webkit-overflow-scrolling:touch;">`;
     html += `<table class="db-table"><thead><tr><th>Marker</th><th>Code</th><th>Fluorochrome</th><th>Dilution</th><th>µL antibody</th><th></th></tr></thead><tbody>`;
 
     laserKeys.forEach(laser => {
