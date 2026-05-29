@@ -323,6 +323,12 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.ld-chip {
+  padding: 5px 10px; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--muted); font-family: var(--font); font-size: 11px;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.ld-chip:hover { border-color: var(--green); color: var(--green); background: var(--green-bg); }
 
 /* SEARCH TABS */
 .search-tab {
@@ -363,6 +369,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   <button class="nav-btn" onclick="showView('saved')">Saved Panels</button>
   <button class="nav-btn" onclick="showView('database')">Database</button>
   <button class="nav-btn" onclick="showView('signout')">Sign-out Log</button>
+  <button class="nav-btn" onclick="showView('experiment')">Experiment</button>
   <div class="nav-spacer"></div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
@@ -507,6 +514,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
         <div class="panel-section-header">🧬 Your Panel</div>
         <div class="panel-name-row">
           <input type="text" class="panel-name-input" id="panel-name" placeholder="Panel name (e.g. Treg panel v1)" oninput="localStorage.setItem('kdv_panel_name', this.value)">
+          <button class="btn-clear" onclick="sortPanelByLaser()" title="Sort by laser line">⇅ Sort</button>
           <button class="btn-clear" onclick="clearPanel()">Clear</button>
           <button class="btn-save" onclick="savePanel()">💾 Save</button>
         </div>
@@ -525,6 +533,32 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
           </table>
         </div>
       </div>
+
+      <!-- Live/Dead section -->
+      <div class="panel-section" style="margin-top:16px;">
+        <div class="panel-section-header" style="background:#1a2a1a;">
+          ☠️ Live/Dead Stain
+          <span style="font-size:11px;font-weight:400;margin-left:8px;color:var(--muted)">separate stain — not part of the antibody panel</span>
+        </div>
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);">
+          <div class="label-small" style="margin-bottom:8px;">Select Live/Dead marker</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;" id="livedead-picker"></div>
+        </div>
+        <div class="panel-table-wrap">
+          <table class="panel-table">
+            <thead>
+              <tr>
+                <th>Marker</th><th>Fluorochrome</th><th>Laser</th>
+                <th>Symphony</th><th>Aurora</th><th>Dilution / Conc.</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="livedead-tbody">
+              <tr><td colspan="7"><div class="empty-state">No live/dead stain added</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -533,7 +567,16 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 <div id="saved-view" class="view">
   <div class="page-header">
     <div class="page-header-text"><h2>Saved Panels</h2><p>Browse panels from the whole lab</p></div>
-    <div class="page-header-actions"><button class="btn-secondary" onclick="showView('builder')">+ New Panel</button></div>
+    <div class="page-header-actions">
+      <select id="panels-user-filter" class="search-input" style="width:160px" onchange="loadSavedPanels()">
+        <option value="">All users</option>
+      </select>
+      <select id="panels-sort" class="search-input" style="width:140px" onchange="loadSavedPanels()">
+        <option value="created_at">Newest first</option>
+        <option value="name">By name</option>
+      </select>
+      <button class="btn-secondary" onclick="showView('builder')">+ New Panel</button>
+    </div>
   </div>
   <div class="panels-grid" id="panels-grid"><div class="page-loader"><span class="loader"></span></div></div>
 </div>
@@ -588,6 +631,144 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
         <div class="panel-section-header">📜 Recent Sign-outs</div>
         <div id="signout-log-list" style="padding:8px 0;"><div class="page-loader"><span class="loader"></span></div></div>
       </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- EXPERIMENT VIEW -->
+<div id="experiment-view" class="view">
+  <div class="page-header">
+    <div class="page-header-text">
+      <h2>Experiment / Pipette Scheme</h2>
+      <p id="exp-panel-name" style="color:var(--accent)"></p>
+    </div>
+    <div class="page-header-actions">
+      <button class="btn-secondary" onclick="printExperiment()">🖨 Print</button>
+      <button class="btn-secondary" onclick="exportExperimentExcel()">📥 Excel</button>
+      <button class="btn-save" onclick="saveExperiment()">💾 Save</button>
+    </div>
+  </div>
+
+  <!-- Setup -->
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;margin-bottom:24px;">
+    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:16px;">Setup</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px;align-items:end;">
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Samples</label>
+        <input type="number" class="form-input" id="exp-samples" value="5" min="1" oninput="recalcScheme()">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Mastermix</label>
+        <select class="form-input" id="exp-mix-type" onchange="recalcScheme()">
+          <option value="1x">1x</option>
+          <option value="2x">2x</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Volume / tube (µL)</label>
+        <input type="number" class="form-input" id="exp-volume" value="50" min="1" oninput="recalcScheme()">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Margin</label>
+        <div style="display:flex;gap:6px;">
+          <select class="form-input" id="exp-margin-type" style="width:70px" onchange="recalcScheme()">
+            <option value="ul">µL</option>
+            <option value="pct">%</option>
+          </select>
+          <input type="number" class="form-input" id="exp-margin-value" value="10" min="0" oninput="recalcScheme()" style="width:70px">
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label">Total tubes</label>
+        <div id="exp-tube-count" style="font-size:22px;font-weight:700;color:var(--accent);padding:6px 0;">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FMO selector -->
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:24px;">
+    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:12px;">FMO Controls</div>
+    <div id="fmo-selector" style="display:flex;flex-wrap:wrap;gap:8px;">
+      <div style="color:var(--muted);font-size:13px;">Load a panel to select FMOs</div>
+    </div>
+  </div>
+
+  <!-- Surface scheme -->
+  <div id="exp-surface-section" style="margin-bottom:24px;display:none;">
+    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:10px;">
+      Surface Staining
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
+      <table class="db-table" id="exp-surface-table">
+        <thead><tr>
+          <th>Marker</th><th>Code</th><th>Fluorochrome</th>
+          <th>Dilution</th><th>µL antibody</th><th>µL buffer</th><th>Total (µL)</th>
+          <th>📊</th>
+        </tr></thead>
+        <tbody id="exp-surface-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- IC scheme -->
+  <div id="exp-ic-section" style="margin-bottom:24px;display:none;">
+    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--violet);margin-bottom:10px;">
+      Intracellular Staining
+    </div>
+    <div style="background:var(--surface);border:1px solid #4a1d9644;border-radius:var(--radius-lg);overflow:hidden;">
+      <table class="db-table" id="exp-ic-table">
+        <thead><tr>
+          <th>Marker</th><th>Code</th><th>Fluorochrome</th>
+          <th>Dilution</th><th>µL antibody</th><th>µL buffer</th><th>Total (µL)</th>
+          <th>📊</th>
+        </tr></thead>
+        <tbody id="exp-ic-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Saved experiments -->
+  <div style="margin-top:32px;">
+    <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:12px;">Saved Experiments</div>
+    <div id="saved-experiments-list"></div>
+  </div>
+</div>
+
+<!-- DILUTION LOG MODAL -->
+<div class="modal-overlay" id="dilution-modal">
+  <div class="modal" style="max-width:600px">
+    <button class="modal-close" onclick="closeModal('dilution-modal')">×</button>
+    <h3 id="dilution-modal-title">Dilution history</h3>
+    <div id="dilution-log-entries" style="margin-bottom:20px;max-height:300px;overflow-y:auto;"></div>
+    <div style="border-top:1px solid var(--border);padding-top:16px;">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:12px;">Log a new dilution</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="form-group"><label class="form-label">Dilution</label><input type="text" class="form-input" id="dl-dilution" placeholder="e.g. 1:200"></div>
+        <div class="form-group"><label class="form-label">Tissue</label>
+          <select class="form-input" id="dl-tissue"><option value="">Select tissue...</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Protocol</label>
+          <select class="form-input" id="dl-protocol">
+            <option value="fresh">Fresh</option>
+            <option value="fixed">Fixed</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Duration</label>
+          <select class="form-input" id="dl-duration">
+            <option value="30min">30 min</option>
+            <option value="overnight">Overnight</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Titrated?</label>
+          <select class="form-input" id="dl-titrated">
+            <option value="false">No</option>
+            <option value="true">Yes</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Notes</label><input type="text" class="form-input" id="dl-notes" placeholder="Optional"></div>
+      </div>
+      <button class="btn-primary" style="margin-top:8px" onclick="submitDilutionLog()">Log this dilution</button>
     </div>
   </div>
 </div>
@@ -705,6 +886,7 @@ function loginAs(name) {
   document.getElementById('nav-avatar').textContent = name.charAt(0).toUpperCase();
   document.getElementById('welcome-name').textContent = name.split(' ')[0];
   restorePanelFromLocal();
+  initLiveDeadPicker();
   showView('landing');
   loadActivity();
 }
@@ -764,9 +946,10 @@ function showView(name) {
   document.querySelectorAll('.nav-btn').forEach(b => {
     if (b.getAttribute('onclick')?.includes(name)) b.classList.add('active');
   });
-  if (name === 'saved')    loadSavedPanels();
-  if (name === 'signout')  loadSignoutLog();
-  if (name === 'landing')  loadActivity();
+  if (name === 'saved')      loadSavedPanels();
+  if (name === 'signout')    loadSignoutLog();
+  if (name === 'landing')    loadActivity();
+  if (name === 'experiment') { loadSavedExperimentsList(); loadTissues(); }
 }
 
 // ── PANEL BUILDER ─────────────────────────────────────────
@@ -832,7 +1015,10 @@ function _doMarkerSearch() {
             ${a.clone ? ' · '+a.clone : ''}
           </div>
         </div>
-        <button class="btn-add" onclick='addToPanel(${JSON.stringify(a)})'>+ Add</button>
+        <div style="display:flex;flex-direction:column;gap:3px">
+        <button class="btn-add" onclick='addToPanel(${JSON.stringify(a)},"surface")' title="Add as surface marker">+ Surface</button>
+        <button class="btn-add" style="background:var(--violet)" onclick='addToPanel(${JSON.stringify(a)},"intracellular")' title="Add as intracellular marker">+ IC</button>
+      </div>
       </div>`;
     }).join('');
 
@@ -912,7 +1098,10 @@ function _doFluorSearch() {
             ${a.company ? ' · '+a.company : ''}
           </div>
         </div>
-        <button class="btn-add" onclick='addToPanel(${JSON.stringify(a)})'>+ Add</button>
+        <div style="display:flex;flex-direction:column;gap:3px">
+        <button class="btn-add" onclick='addToPanel(${JSON.stringify(a)},"surface")' title="Add as surface marker">+ Surface</button>
+        <button class="btn-add" style="background:var(--violet)" onclick='addToPanel(${JSON.stringify(a)},"intracellular")' title="Add as intracellular marker">+ IC</button>
+      </div>
       </div>`).join('');
 
     const detInfo = fi ? `${fi.excitation_laser} nm · ${fi.symphony_detector} · ${fi.brightness}` : '';
@@ -934,18 +1123,19 @@ function _doFluorSearch() {
   }).join('');
 }
 
-function addToPanel(ab) {
+function addToPanel(ab, stainingType) {
   const fi = getFluorInfo(ab.fluorochrome);
+  const type = stainingType || 'surface';
   currentPanel.push({
     marker: ab.marker||'', code: ab.code||'', fluorochrome: ab.fluorochrome||'',
     laser: fi?.excitation_laser||'', emission: fi?.emission_peak||'',
     symphony: fi?.symphony_detector||'', aurora: fi?.aurora_channel||'',
     brightness: fi?.brightness||'', box_color: ab.box_color||'',
-    dilution: '', notes: ''
+    dilution: '', notes: '', staining_type: type
   });
   savePanelToLocal();
   renderPanel();
-  toast(`${ab.marker} added`, 'success');
+  toast(`${ab.marker} added (${type})`, 'success');
 }
 
 function removeFromPanel(i) {
@@ -962,19 +1152,107 @@ function clearPanel() {
   renderPanel();
 }
 
+// ── SORT PANEL BY LASER ───────────────────────────────────
+function sortPanelByLaser() {
+  if (!currentPanel.length) return;
+  const laserOrder   = {355:0, 405:1, 488:2, 561:3, 638:4};
+  const stainingOrder = {'surface':0, 'intracellular':1};
+  currentPanel.sort((a, b) => {
+    // Surface before intracellular
+    const sa = stainingOrder[a.staining_type||'surface'] ?? 0;
+    const sb = stainingOrder[b.staining_type||'surface'] ?? 0;
+    if (sa !== sb) return sa - sb;
+    // Then by laser
+    const la = laserOrder[a.laser] ?? 9;
+    const lb = laserOrder[b.laser] ?? 9;
+    if (la !== lb) return la - lb;
+    // Then by emission
+    return (a.emission || 999) - (b.emission || 999);
+  });
+  savePanelToLocal();
+  renderPanel();
+  toast('Sorted: surface → IC, then by laser line', 'success');
+}
+
+// ── LIVE/DEAD ─────────────────────────────────────────────
+const LIVEDEAD_OPTIONS = [
+  { name: 'DAPI',                      fluorochrome: 'DAPI',          laser: 355, symphony: 'UV450/40',  aurora: 'UV2 / 450',  brightness: 'Bright' },
+  { name: '7-AAD',                     fluorochrome: '7-AAD',         laser: 488, symphony: 'B695/40',   aurora: 'B22 / 692',  brightness: 'Bright' },
+  { name: 'PI',                        fluorochrome: 'PI',            laser: 488, symphony: 'B610/20',   aurora: 'B16 / 610',  brightness: 'Bright' },
+  { name: 'Zombie Aqua',               fluorochrome: 'Zombie Aqua',   laser: 405, symphony: 'V450/40',   aurora: 'V2 / 455',   brightness: 'Bright' },
+  { name: 'Zombie Violet',             fluorochrome: 'Zombie Violet', laser: 405, symphony: 'V450/40',   aurora: 'V2 / 455',   brightness: 'Bright' },
+  { name: 'Zombie Yellow',             fluorochrome: 'Zombie Yellow', laser: 405, symphony: 'V570/30',   aurora: 'V7 / 570',   brightness: 'Bright' },
+  { name: 'Zombie Red',                fluorochrome: 'Zombie Red',    laser: 405, symphony: 'V655/40',   aurora: 'V12 / 650',  brightness: 'Bright' },
+  { name: 'Zombie NIR',                fluorochrome: 'Zombie NIR',    laser: 405, symphony: 'V800/60',   aurora: 'V18 / 780',  brightness: 'Bright' },
+  { name: 'LIVE/DEAD Fixable Aqua',    fluorochrome: 'LD Aqua',       laser: 405, symphony: 'V450/40',   aurora: 'V2 / 455',   brightness: 'Bright' },
+  { name: 'LIVE/DEAD Fixable Yellow',  fluorochrome: 'LD Yellow',     laser: 405, symphony: 'V570/30',   aurora: 'V7 / 570',   brightness: 'Bright' },
+  { name: 'LIVE/DEAD Fixable Red',     fluorochrome: 'LD Red',        laser: 561, symphony: 'YG670/30',  aurora: 'YG20 / 660', brightness: 'Bright' },
+  { name: 'LIVE/DEAD Fixable Near-IR', fluorochrome: 'LD Near-IR',    laser: 638, symphony: 'R780/60',   aurora: 'R5 / 780',   brightness: 'Bright' },
+];
+
+let currentLiveDead = [];
+
+function initLiveDeadPicker() {
+  const el = document.getElementById('livedead-picker');
+  if (!el) return;
+  el.innerHTML = LIVEDEAD_OPTIONS.map(opt => `
+    <button class="ld-chip" onclick='addLiveDead(${JSON.stringify(opt)})'>
+      + ${opt.name}
+    </button>`).join('');
+}
+
+function addLiveDead(opt) {
+  currentLiveDead = [opt]; // only one live/dead at a time
+  savePanelToLocal();
+  renderLiveDead();
+  toast(`${opt.name} added`, 'success');
+}
+
+function removeLiveDead() {
+  currentLiveDead = [];
+  savePanelToLocal();
+  renderLiveDead();
+}
+
+function renderLiveDead() {
+  const tbody = document.getElementById('livedead-tbody');
+  if (!tbody) return;
+  if (!currentLiveDead.length) {
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state">No live/dead stain added</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = currentLiveDead.map(r => `
+    <tr class="row-green">
+      <td class="panel-marker">☠️ ${r.name}</td>
+      <td class="panel-fluor">${r.fluorochrome}</td>
+      <td class="panel-detector">${r.laser} nm</td>
+      <td class="panel-detector">${r.symphony}</td>
+      <td class="panel-detector">${r.aurora}</td>
+      <td><input type="text" class="dilution-input" placeholder="e.g. 1:500"
+        value="${r.dilution||''}" onchange="currentLiveDead[0].dilution=this.value;savePanelToLocal()"></td>
+      <td><button class="btn-remove" onclick="removeLiveDead()">✕</button></td>
+    </tr>`).join('');
+}
+
 function savePanelToLocal() {
   localStorage.setItem('kdv_current_panel', JSON.stringify(currentPanel));
+  localStorage.setItem('kdv_current_livedead', JSON.stringify(currentLiveDead));
   localStorage.setItem('kdv_panel_name', document.getElementById('panel-name')?.value || '');
 }
 
 function restorePanelFromLocal() {
   try {
-    const saved = localStorage.getItem('kdv_current_panel');
-    const name  = localStorage.getItem('kdv_panel_name');
+    const saved   = localStorage.getItem('kdv_current_panel');
+    const savedLD = localStorage.getItem('kdv_current_livedead');
+    const name    = localStorage.getItem('kdv_panel_name');
     if (saved) {
       currentPanel = JSON.parse(saved);
       if (name) document.getElementById('panel-name').value = name;
       renderPanel();
+    }
+    if (savedLD) {
+      currentLiveDead = JSON.parse(savedLD);
+      renderLiveDead();
     }
   } catch(e) {}
 }
@@ -986,30 +1264,62 @@ function laserToRowClass(laser) {
 function renderPanel() {
   const tbody = document.getElementById('panel-tbody');
   if (!currentPanel.length) {
-    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No antibodies added yet</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No antibodies added yet — use + Surface or + IC buttons in search</div></td></tr>';
     return;
   }
+
   const detCount = {};
   currentPanel.forEach(r => { if(r.symphony) detCount[r.symphony]=(detCount[r.symphony]||0)+1; });
 
-  tbody.innerHTML = currentPanel.map((r,i) => {
-    const conflict = r.symphony && detCount[r.symphony] > 1;
-    const rowClass = conflict ? 'row-conflict' : laserToRowClass(r.laser);
-    const colorClass = 'laser-' + (r.box_color||'').replace(' ','-');
-    return `<tr class="${rowClass}">
-      <td class="panel-marker">
-        <span class="laser-dot ${colorClass}"></span>${r.marker}
-        ${conflict ? '<br><span class="conflict-badge">⚠ CONFLICT</span>' : ''}
-      </td>
-      <td class="panel-code">${r.code}</td>
-      <td class="panel-fluor">${r.fluorochrome}</td>
-      <td class="panel-detector">${r.laser ? r.laser+' nm' : ''}</td>
-      <td class="panel-detector">${r.symphony}</td>
-      <td class="panel-detector">${r.aurora}</td>
-      <td><input type="text" class="dilution-input" placeholder="1:100" value="${r.dilution}" onchange="currentPanel[${i}].dilution=this.value; savePanelToLocal()"></td>
-      <td><button class="btn-remove" onclick="removeFromPanel(${i})">✕</button></td>
-    </tr>`;
-  }).join('');
+  const surface = currentPanel.filter(r => (r.staining_type||'surface') === 'surface');
+  const ic      = currentPanel.filter(r => r.staining_type === 'intracellular');
+
+  function renderRows(rows, offset) {
+    return rows.map((r) => {
+      const i = currentPanel.indexOf(r);
+      const conflict = r.symphony && detCount[r.symphony] > 1;
+      const rowClass = conflict ? 'row-conflict' : laserToRowClass(r.laser);
+      const colorClass = 'laser-' + (r.box_color||'').replace(' ','-');
+      return `<tr class="${rowClass}">
+        <td class="panel-marker">
+          <span class="laser-dot ${colorClass}"></span>${r.marker}
+          ${conflict ? '<br><span class="conflict-badge">⚠ CONFLICT</span>' : ''}
+        </td>
+        <td class="panel-code">${r.code}</td>
+        <td class="panel-fluor">${r.fluorochrome}</td>
+        <td class="panel-detector">${r.laser ? r.laser+' nm' : ''}</td>
+        <td class="panel-detector">${r.symphony}</td>
+        <td class="panel-detector">${r.aurora}</td>
+        <td>
+          <input type="text" class="dilution-input" placeholder="1:100"
+            value="${r.dilution}"
+            onchange="currentPanel[${i}].dilution=this.value; savePanelToLocal()">
+          <button class="btn-icon" style="margin-left:4px;font-size:10px;padding:2px 5px"
+            onclick="showDilutionLog('${r.code}','${r.marker}','${r.fluorochrome}')"
+            title="See what others used">📊</button>
+        </td>
+        <td><button class="btn-remove" onclick="removeFromPanel(${i})">✕</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  let html = '';
+
+  // Surface section
+  if (surface.length) {
+    html += `<tr><td colspan="8" style="padding:6px 10px;background:var(--surface2);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">
+      Surface Staining (${surface.length} markers)</td></tr>`;
+    html += renderRows(surface, 0);
+  }
+
+  // Intracellular section
+  if (ic.length) {
+    html += `<tr><td colspan="8" style="padding:6px 10px;background:#2a1a3a;font-size:11px;font-weight:700;color:var(--violet);text-transform:uppercase;letter-spacing:0.5px">
+      Intracellular Staining (${ic.length} markers)</td></tr>`;
+    html += renderRows(ic, surface.length);
+  }
+
+  tbody.innerHTML = html;
 }
 
 async function savePanel() {
@@ -1021,38 +1331,79 @@ async function savePanel() {
   if (error) { toast('Error: '+error.message, 'error'); return; }
 
   const rowsToInsert = currentPanel.map((r,i) => ({
-    panel_id:     panel.id,
-    marker:       r.marker       || '',
-    code:         r.code         || '',
-    fluorochrome: r.fluorochrome || '',
-    dilution:     r.dilution     || '',
-    notes:        r.notes        || '',
-    sort_order:   i
+    panel_id:      panel.id,
+    marker:        r.marker        || '',
+    code:          r.code          || '',
+    fluorochrome:  r.fluorochrome  || '',
+    dilution:      r.dilution      || '',
+    notes:         r.notes         || '',
+    staining_type: r.staining_type || 'surface',
+    sort_order:    i
   }));
 
   const { error: rowError } = await db.from('panel_rows').insert(rowsToInsert);
   if (rowError) { toast('Error saving rows: '+rowError.message, 'error'); return; }
+
+  // Save live/dead row if present
+  if (currentLiveDead.length) {
+    const ld = currentLiveDead[0];
+    await db.from('panel_rows').insert({
+      panel_id: panel.id,
+      marker: '☠️ ' + ld.name,
+      code: 'LIVE/DEAD',
+      fluorochrome: ld.fluorochrome,
+      dilution: ld.dilution || '',
+      notes: 'live_dead',
+      sort_order: 999
+    });
+  }
+
   toast(`"${name}" saved — ${rowsToInsert.length} markers`, 'success');
 }
 
 // ── SAVED PANELS ──────────────────────────────────────────
 async function loadSavedPanels() {
-  const grid = document.getElementById('panels-grid');
-  grid.innerHTML = '<div class="page-loader"><span class="loader"></span></div>';
-  const { data } = await db.from('panels').select('*, panel_rows(*)').order('created_at', { ascending: false });
+  const grid        = document.getElementById('panels-grid');
+  const userFilter  = document.getElementById('panels-user-filter')?.value || '';
+  const sortField   = document.getElementById('panels-sort')?.value || 'created_at';
+  grid.innerHTML    = '<div class="page-loader"><span class="loader"></span></div>';
+
+  let query = db.from('panels').select('*, panel_rows(*)');
+  if (userFilter) query = query.eq('user_name', userFilter);
+  if (sortField === 'name') query = query.order('name');
+  else query = query.order('created_at', { ascending: false });
+
+  const { data } = await query;
   if (!data?.length) { grid.innerHTML = '<div class="empty-state">No saved panels yet</div>'; return; }
 
+  // Populate user filter dropdown
+  const userSel = document.getElementById('panels-user-filter');
+  if (userSel && userSel.options.length <= 1) {
+    const users = [...new Set(data.map(p => p.user_name).filter(Boolean))].sort();
+    users.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u; opt.textContent = u;
+      if (u === userFilter) opt.selected = true;
+      userSel.appendChild(opt);
+    });
+  }
+
   grid.innerHTML = data.map(p => {
-    const rows = p.panel_rows||[];
+    const rows = (p.panel_rows||[]).filter(r => r.notes !== 'live_dead');
     const date = new Date(p.created_at).toLocaleDateString('nl-NL');
-    const chips = rows.slice(0,6).map(r => `<span class="sp-marker-chip">${r.marker}</span>`).join('')
-      + (rows.length>6 ? `<span class="sp-marker-chip">+${rows.length-6}</span>` : '');
+    const surface = rows.filter(r => (r.staining_type||'surface') === 'surface');
+    const ic      = rows.filter(r => r.staining_type === 'intracellular');
+    const chips   = rows.slice(0,6).map(r =>
+      `<span class="sp-marker-chip" style="${r.staining_type==='intracellular' ? 'border-color:var(--violet);color:var(--violet)' : ''}">${r.marker}</span>`
+    ).join('') + (rows.length>6 ? `<span class="sp-marker-chip">+${rows.length-6}</span>` : '');
+
     return `<div class="saved-panel-card">
       <div class="sp-name">${p.name}</div>
-      <div class="sp-meta">${p.user_name} · ${date} · ${rows.length} markers</div>
+      <div class="sp-meta">${p.user_name} · ${date} · ${surface.length} surface${ic.length ? ' · '+ic.length+' IC' : ''}</div>
       <div class="sp-markers">${chips}</div>
       <div class="sp-actions">
-        <button class="btn-secondary" style="font-size:12px;padding:6px 12px" onclick="loadPanelIntoBuilder('${p.id}')">Load into Builder</button>
+        <button class="btn-save" style="font-size:12px;padding:6px 14px" onclick="usePanelForExperiment('${p.id}','${p.name.replace(/'/g,"\'")}')">Use Panel →</button>
+        <button class="btn-secondary" style="font-size:12px;padding:6px 12px" onclick="loadPanelIntoBuilder('${p.id}')">Edit</button>
         ${p.user_name === userName ? `<button class="btn-icon danger" onclick="deletePanel('${p.id}')">Delete</button>` : ''}
       </div>
     </div>`;
@@ -1066,17 +1417,18 @@ async function loadPanelIntoBuilder(panelId) {
   currentPanel = data.map(r => {
     const fi = getFluorInfo(r.fluorochrome);
     return {
-      marker:      r.marker      || '',
-      code:        r.code        || '',
-      fluorochrome:r.fluorochrome|| '',
-      laser:       fi?.excitation_laser   || '',
-      emission:    fi?.emission_peak      || '',
-      symphony:    fi?.symphony_detector  || '',
-      aurora:      fi?.aurora_channel     || '',
-      brightness:  fi?.brightness         || '',
-      box_color:   '',
-      dilution:    r.dilution || '',
-      notes:       r.notes    || ''
+      marker:        r.marker        || '',
+      code:          r.code          || '',
+      fluorochrome:  r.fluorochrome  || '',
+      laser:         fi?.excitation_laser   || '',
+      emission:      fi?.emission_peak      || '',
+      symphony:      fi?.symphony_detector  || '',
+      aurora:        fi?.aurora_channel     || '',
+      brightness:    fi?.brightness         || '',
+      box_color:     '',
+      dilution:      r.dilution      || '',
+      notes:         r.notes         || '',
+      staining_type: r.staining_type || 'surface'
     };
   });
   savePanelToLocal();
@@ -1293,6 +1645,382 @@ function toast(msg, type='') {
 // ── We need a users table — add to schema ─────────────────
 // START
 init();
+
+
+// ════════════════════════════════════════════════════════
+// EXPERIMENT / PIPETTE SCHEME
+// ════════════════════════════════════════════════════════
+let experimentPanel    = null;  // {id, name, rows}
+let experimentFMOs     = new Set();
+let dilutionModalMeta  = {};    // current antibody being viewed
+let tissueList         = [];
+
+async function loadTissues() {
+  const { data } = await db.from('tissues').select('*').order('name');
+  tissueList = data || [];
+  const sel = document.getElementById('dl-tissue');
+  if (sel) {
+    sel.innerHTML = '<option value="">Select tissue...</option>'
+      + tissueList.map(t => `<option value="${t.name}">${t.name}</option>`).join('')
+      + '<option value="__new__">+ Add new tissue...</option>';
+  }
+}
+
+async function usePanelForExperiment(panelId, panelName) {
+  const { data } = await db.from('panel_rows').select('*').eq('panel_id', panelId).order('sort_order');
+  if (!data) { toast('Could not load panel', 'error'); return; }
+
+  experimentPanel = { id: panelId, name: panelName, rows: data.filter(r => r.notes !== 'live_dead') };
+  experimentFMOs  = new Set();
+
+  document.getElementById('exp-panel-name').textContent = 'Panel: ' + panelName;
+  renderFMOSelector();
+  recalcScheme();
+  showView('experiment');
+  loadSavedExperimentsList();
+  loadTissues();
+}
+
+function renderFMOSelector() {
+  const el = document.getElementById('fmo-selector');
+  if (!experimentPanel) return;
+  const surface = experimentPanel.rows.filter(r => (r.staining_type||'surface') === 'surface');
+  if (!surface.length) { el.innerHTML = '<div style="color:var(--muted);font-size:13px">No surface markers loaded</div>'; return; }
+  el.innerHTML = surface.map(r => `
+    <label style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;">
+      <input type="checkbox" onchange="toggleFMO('${r.marker}')" ${experimentFMOs.has(r.marker)?'checked':''}>
+      ${r.marker}
+    </label>`).join('');
+}
+
+function toggleFMO(marker) {
+  if (experimentFMOs.has(marker)) experimentFMOs.delete(marker);
+  else experimentFMOs.add(marker);
+  recalcScheme();
+}
+
+function calcTubeCount() {
+  const samples    = parseInt(document.getElementById('exp-samples')?.value) || 0;
+  const fmos       = experimentFMOs.size;
+  const marginType = document.getElementById('exp-margin-type')?.value || 'ul';
+  const marginVal  = parseFloat(document.getElementById('exp-margin-value')?.value) || 0;
+  const vol        = parseFloat(document.getElementById('exp-volume')?.value) || 50;
+  const mixType    = document.getElementById('exp-mix-type')?.value || '1x';
+
+  let tubes = samples + fmos;
+  let totalVol = tubes * vol * (mixType === '2x' ? 2 : 1);
+  if (marginType === 'ul')  totalVol += marginVal;
+  if (marginType === 'pct') totalVol *= (1 + marginVal/100);
+  return { tubes, totalVol: Math.ceil(totalVol) };
+}
+
+function calcAntibodyVol(dilution, totalVol) {
+  // Parse dilution string e.g. "1:200" -> 1/200
+  if (!dilution) return null;
+  const parts = dilution.toString().split(':');
+  if (parts.length !== 2) return null;
+  const ratio = parseFloat(parts[1]);
+  if (!ratio) return null;
+  const abVol  = totalVol / ratio;
+  return { abVol: Math.round(abVol * 100)/100, bufVol: Math.round((totalVol - abVol)*100)/100 };
+}
+
+function recalcScheme() {
+  if (!experimentPanel) return;
+
+  const { tubes, totalVol } = calcTubeCount();
+  document.getElementById('exp-tube-count').textContent = tubes + ' tubes · ' + totalVol + ' µL total';
+
+  const surface = experimentPanel.rows.filter(r => (r.staining_type||'surface') === 'surface');
+  const ic      = experimentPanel.rows.filter(r => r.staining_type === 'intracellular');
+
+  function renderSchemeRows(rows, tbodyId) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    tbody.innerHTML = rows.map(r => {
+      const isFMO = experimentFMOs.has(r.marker);
+      const calc  = calcAntibodyVol(r.dilution, totalVol);
+      return `<tr ${isFMO ? 'style="background:#1a3a2a"' : ''}>
+        <td><strong>${r.marker}</strong> ${isFMO ? '<span style="font-size:10px;background:var(--green);color:#fff;padding:1px 5px;border-radius:3px;margin-left:4px">FMO</span>' : ''}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--accent)">${r.code||''}</td>
+        <td>${r.fluorochrome||''}</td>
+        <td>
+          <input type="text" class="dilution-input" style="width:80px" placeholder="1:200"
+            value="${r.dilution||''}"
+            onchange="updateExpDilution('${r.marker}','${r.staining_type||'surface'}',this.value)">
+        </td>
+        <td style="font-weight:600;color:${calc ? 'var(--accent)' : 'var(--muted)'}">
+          ${calc ? calc.abVol + ' µL' : '—'}
+        </td>
+        <td style="color:var(--muted)">${calc ? calc.bufVol + ' µL' : '—'}</td>
+        <td style="font-weight:600">${calc ? totalVol + ' µL' : '—'}</td>
+        <td>
+          <button class="btn-icon" style="font-size:10px;padding:2px 6px"
+            onclick="showDilutionLog('${r.code}','${r.marker}','${r.fluorochrome}')"
+            title="See what others used">📊</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  const surfaceSection = document.getElementById('exp-surface-section');
+  const icSection      = document.getElementById('exp-ic-section');
+
+  if (surface.length) { surfaceSection.style.display='block'; renderSchemeRows(surface,'exp-surface-tbody'); }
+  else surfaceSection.style.display='none';
+
+  if (ic.length) { icSection.style.display='block'; renderSchemeRows(ic,'exp-ic-tbody'); }
+  else icSection.style.display='none';
+}
+
+function updateExpDilution(marker, type, value) {
+  if (!experimentPanel) return;
+  const row = experimentPanel.rows.find(r => r.marker === marker && (r.staining_type||'surface') === type);
+  if (row) row.dilution = value;
+  recalcScheme();
+}
+
+// ── DILUTION LOG ──────────────────────────────────────────
+async function showDilutionLog(code, marker, fluorochrome) {
+  dilutionModalMeta = { code, marker, fluorochrome };
+  document.getElementById('dilution-modal-title').textContent = `${marker} — ${fluorochrome}`;
+
+  const el = document.getElementById('dilution-log-entries');
+  el.innerHTML = '<div class="page-loader"><span class="loader"></span></div>';
+  openModal('dilution-modal');
+  await loadTissues();
+
+  const { data } = await db.from('dilution_logs')
+    .select('*')
+    .eq('antibody_code', code)
+    .order('created_at', { ascending: false });
+
+  if (!data?.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:12px 0">No dilutions logged yet for this antibody. Be the first!</div>';
+    return;
+  }
+
+  el.innerHTML = data.map(d => {
+    const date = new Date(d.created_at).toLocaleDateString('nl-NL');
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px;">
+      <div style="flex:1">
+        <div style="font-size:15px;font-weight:700;color:var(--accent)">${d.dilution}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">
+          ${d.tissue||''} · ${d.protocol||''} · ${d.duration||''}
+          ${d.titrated ? ' · <span style="color:var(--green);font-weight:600">✓ Titrated</span>' : ' · <span style="color:var(--muted)">Not titrated</span>'}
+        </div>
+        ${d.notes ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;font-style:italic">${d.notes}</div>` : ''}
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">${d.user_name} · ${date}</div>
+      </div>
+      <button class="btn-secondary" style="font-size:11px;padding:4px 10px;white-space:nowrap"
+        onclick="copyDilution('${d.dilution}')">Use this</button>
+    </div>`;
+  }).join('');
+}
+
+function copyDilution(dilution) {
+  if (!experimentPanel || !dilutionModalMeta.marker) return;
+  const marker = dilutionModalMeta.marker;
+  const row = experimentPanel?.rows?.find(r => r.marker === marker);
+  if (row) {
+    row.dilution = dilution;
+    recalcScheme();
+    toast(`Dilution ${dilution} copied for ${marker}`, 'success');
+  }
+  // Also update panel builder if open
+  const panelRow = currentPanel.find(r => r.marker === marker);
+  if (panelRow) { panelRow.dilution = dilution; savePanelToLocal(); renderPanel(); }
+  closeModal('dilution-modal');
+}
+
+async function submitDilutionLog() {
+  const dilution = document.getElementById('dl-dilution').value.trim();
+  if (!dilution) { toast('Enter a dilution first', 'error'); return; }
+
+  const tissue = document.getElementById('dl-tissue').value;
+  if (tissue === '__new__') {
+    const newTissue = prompt('Enter new tissue name:');
+    if (newTissue?.trim()) {
+      await db.from('tissues').insert({ name: newTissue.trim() });
+      await loadTissues();
+      document.getElementById('dl-tissue').value = newTissue.trim();
+    }
+    return;
+  }
+
+  const { error } = await db.from('dilution_logs').insert({
+    antibody_code:  dilutionModalMeta.code,
+    marker:         dilutionModalMeta.marker,
+    fluorochrome:   dilutionModalMeta.fluorochrome,
+    dilution,
+    tissue,
+    protocol:  document.getElementById('dl-protocol').value,
+    duration:  document.getElementById('dl-duration').value,
+    titrated:  document.getElementById('dl-titrated').value === 'true',
+    user_name: userName,
+    notes:     document.getElementById('dl-notes').value.trim()
+  });
+
+  if (error) { toast('Error: '+error.message, 'error'); return; }
+  toast('Dilution logged!', 'success');
+  showDilutionLog(dilutionModalMeta.code, dilutionModalMeta.marker, dilutionModalMeta.fluorochrome);
+}
+
+// ── SAVE EXPERIMENT ───────────────────────────────────────
+async function saveExperiment() {
+  if (!experimentPanel) { toast('No panel loaded', 'error'); return; }
+
+  const { data: exp, error } = await db.from('experiments').insert({
+    panel_id:        experimentPanel.id,
+    panel_name:      experimentPanel.name,
+    user_name:       userName,
+    samples:         parseInt(document.getElementById('exp-samples').value)||0,
+    mix_type:        document.getElementById('exp-mix-type').value,
+    volume_per_tube: parseInt(document.getElementById('exp-volume').value)||50,
+    margin_type:     document.getElementById('exp-margin-type').value,
+    margin_value:    parseFloat(document.getElementById('exp-margin-value').value)||0,
+  }).select().single();
+
+  if (error) { toast('Error: '+error.message, 'error'); return; }
+
+  const rows = experimentPanel.rows.map((r,i) => ({
+    experiment_id:  exp.id,
+    marker:         r.marker,
+    code:           r.code,
+    fluorochrome:   r.fluorochrome,
+    dilution:       r.dilution||'',
+    staining_type:  r.staining_type||'surface',
+    is_fmo:         experimentFMOs.has(r.marker),
+    sort_order:     i
+  }));
+
+  await db.from('experiment_rows').insert(rows);
+  toast('Experiment saved!', 'success');
+  loadSavedExperimentsList();
+}
+
+async function loadSavedExperimentsList() {
+  const el = document.getElementById('saved-experiments-list');
+  if (!el) return;
+  const { data } = await db.from('experiments').select('*').order('created_at', { ascending: false }).limit(20);
+  if (!data?.length) { el.innerHTML = '<div style="color:var(--muted);font-size:13px">No experiments saved yet</div>'; return; }
+
+  el.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
+    <table class="db-table">
+      <thead><tr><th>Panel</th><th>User</th><th>Date</th><th>Samples</th><th>Volume</th><th>Mix</th><th></th></tr></thead>
+      <tbody>${data.map(e => {
+        const date = new Date(e.created_at).toLocaleDateString('nl-NL');
+        return `<tr>
+          <td><strong>${e.panel_name||'—'}</strong></td>
+          <td style="color:var(--muted)">${e.user_name||'—'}</td>
+          <td style="color:var(--muted)">${date}</td>
+          <td>${e.samples||'—'}</td>
+          <td>${e.volume_per_tube||50} µL</td>
+          <td>${e.mix_type||'1x'}</td>
+          <td><button class="btn-icon" onclick="loadExperiment('${e.id}')">Load</button></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>
+  </div>`;
+}
+
+async function loadExperiment(expId) {
+  const { data: exp }  = await db.from('experiments').select('*').eq('id', expId).single();
+  const { data: rows } = await db.from('experiment_rows').select('*').eq('experiment_id', expId).order('sort_order');
+  if (!exp || !rows) { toast('Could not load experiment', 'error'); return; }
+
+  experimentPanel = { id: exp.panel_id, name: exp.panel_name, rows: rows.map(r => ({
+    marker: r.marker, code: r.code, fluorochrome: r.fluorochrome,
+    dilution: r.dilution, staining_type: r.staining_type
+  }))};
+  experimentFMOs = new Set(rows.filter(r => r.is_fmo).map(r => r.marker));
+
+  document.getElementById('exp-panel-name').textContent = 'Panel: ' + exp.panel_name;
+  document.getElementById('exp-samples').value      = exp.samples||5;
+  document.getElementById('exp-mix-type').value     = exp.mix_type||'1x';
+  document.getElementById('exp-volume').value       = exp.volume_per_tube||50;
+  document.getElementById('exp-margin-type').value  = exp.margin_type||'ul';
+  document.getElementById('exp-margin-value').value = exp.margin_value||10;
+
+  renderFMOSelector();
+  recalcScheme();
+  toast('Experiment loaded', 'success');
+}
+
+// ── PRINT ─────────────────────────────────────────────────
+function printExperiment() {
+  if (!experimentPanel) { toast('No panel loaded', 'error'); return; }
+  const { totalVol } = calcTubeCount();
+
+  const makeTable = (rows) => rows.map(r => {
+    const calc = calcAntibodyVol(r.dilution, totalVol);
+    return `<tr>
+      <td>${r.marker}</td><td>${r.code||''}</td><td>${r.fluorochrome||''}</td>
+      <td>${r.dilution||'—'}</td>
+      <td>${calc ? calc.abVol+' µL' : '—'}</td>
+      <td>${calc ? calc.bufVol+' µL' : '—'}</td>
+      <td>${calc ? totalVol+' µL' : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  const surface = experimentPanel.rows.filter(r => (r.staining_type||'surface')==='surface');
+  const ic      = experimentPanel.rows.filter(r => r.staining_type==='intracellular');
+  const samples = document.getElementById('exp-samples').value;
+  const vol     = document.getElementById('exp-volume').value;
+  const mix     = document.getElementById('exp-mix-type').value;
+
+  const win = window.open('','_blank');
+  win.document.write(`<html><head><title>Pipette Scheme — ${experimentPanel.name}</title>
+  <style>
+    body{font-family:Arial,sans-serif;font-size:12px;padding:20px;color:#000}
+    h1{font-size:18px;margin-bottom:4px} .meta{color:#666;font-size:11px;margin-bottom:20px}
+    h2{font-size:13px;margin:16px 0 6px;text-transform:uppercase;letter-spacing:0.5px}
+    table{width:100%;border-collapse:collapse;margin-bottom:16px}
+    th{background:#f0f0f0;padding:6px 8px;text-align:left;font-size:11px;border:1px solid #ccc}
+    td{padding:6px 8px;border:1px solid #ddd}
+  </style></head><body>
+  <h1>${experimentPanel.name}</h1>
+  <div class="meta">
+    ${samples} samples · ${vol} µL/tube · ${mix} mastermix · Total: ${totalVol} µL per antibody
+  </div>
+  ${surface.length ? `<h2>Surface Staining</h2>
+    <table><thead><tr><th>Marker</th><th>Code</th><th>Fluorochrome</th><th>Dilution</th><th>µL antibody</th><th>µL buffer</th><th>Total</th></tr></thead>
+    <tbody>${makeTable(surface)}</tbody></table>` : ''}
+  ${ic.length ? `<h2>Intracellular Staining</h2>
+    <table><thead><tr><th>Marker</th><th>Code</th><th>Fluorochrome</th><th>Dilution</th><th>µL antibody</th><th>µL buffer</th><th>Total</th></tr></thead>
+    <tbody>${makeTable(ic)}</tbody></table>` : ''}
+  </body></html>`);
+  win.document.close();
+  win.print();
+}
+
+// ── EXCEL EXPORT ──────────────────────────────────────────
+function exportExperimentExcel() {
+  if (!experimentPanel) { toast('No panel loaded', 'error'); return; }
+  const { totalVol } = calcTubeCount();
+  const samples = document.getElementById('exp-samples').value;
+  const vol     = document.getElementById('exp-volume').value;
+  const mix     = document.getElementById('exp-mix-type').value;
+
+  let csv = `Panel,${experimentPanel.name}\n`;
+  csv += `Samples,${samples}\nVolume per tube,${vol} µL\nMastermix,${mix}\nTotal volume,${totalVol} µL\n\n`;
+  csv += 'Type,Marker,Code,Fluorochrome,Dilution,µL antibody,µL buffer,Total µL\n';
+
+  experimentPanel.rows.forEach(r => {
+    const calc = calcAntibodyVol(r.dilution, totalVol);
+    const type = r.staining_type === 'intracellular' ? 'IC' : 'Surface';
+    csv += `${type},${r.marker},${r.code||''},${r.fluorochrome||''},${r.dilution||''},${calc?calc.abVol:''},${calc?calc.bufVol:''},${calc?totalVol:''}\n`;
+  });
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = experimentPanel.name.replace(/\s+/g,'_') + '_pipette_scheme.csv';
+  a.click(); URL.revokeObjectURL(url);
+  toast('Downloaded as CSV (opens in Excel)', 'success');
+}
+
+
 </script>
 </body>
 </html>
