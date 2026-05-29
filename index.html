@@ -1,0 +1,1758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KDV Panel Tool</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #0f1117;
+  --surface:   #1a1d27;
+  --surface2:  #22263a;
+  --border:    #2e3248;
+  --text:      #e8eaf0;
+  --muted:     #7a7f99;
+  --accent:    #5b8dee;
+  --accent2:   #7c5bde;
+
+  --blue:      #3b82f6;
+  --blue-bg:   #1e3a5f22;
+  --green:     #22c55e;
+  --green-bg:  #14532d22;
+  --red:       #ef4444;
+  --red-bg:    #7f1d1d22;
+  --violet:    #a855f7;
+  --violet-bg: #4a1d9622;
+  --uv:        #c084fc;
+  --uv-bg:     #3b0764 22;
+
+  --radius:    10px;
+  --radius-lg: 16px;
+  --shadow:    0 4px 24px #00000044;
+  --font:      'DM Sans', sans-serif;
+  --mono:      'DM Mono', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 14px;
+}
+
+/* ── NAV ── */
+nav {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  height: 56px;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.nav-logo {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  margin-right: 16px;
+  letter-spacing: -0.3px;
+}
+.nav-logo span { color: var(--accent); }
+.nav-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.nav-btn:hover { background: var(--surface2); color: var(--text); }
+.nav-btn.active { background: var(--surface2); color: var(--accent); }
+.nav-spacer { flex: 1; }
+.nav-user {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.nav-avatar {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--accent2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: #fff;
+}
+
+/* ── VIEWS ── */
+.view { display: none; padding: 32px 24px; max-width: 1200px; margin: 0 auto; }
+.view.active { display: block; }
+
+/* ── LOGIN ── */
+#login-view {
+  display: flex; align-items: center; justify-content: center;
+  min-height: calc(100vh - 56px);
+}
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 48px;
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.login-logo { font-size: 32px; font-weight: 800; margin-bottom: 8px; letter-spacing: -1px; }
+.login-logo span { color: var(--accent); }
+.login-sub { color: var(--muted); margin-bottom: 32px; font-size: 14px; }
+.login-card input {
+  width: 100%;
+  padding: 12px 16px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  margin-bottom: 12px;
+  outline: none;
+  transition: border 0.15s;
+}
+.login-card input:focus { border-color: var(--accent); }
+.login-card input::placeholder { color: var(--muted); }
+.btn-primary {
+  width: 100%;
+  padding: 12px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.btn-primary:hover { opacity: 0.9; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.login-msg { margin-top: 16px; font-size: 13px; color: var(--green); min-height: 20px; }
+.login-msg.error { color: var(--red); }
+
+/* ── LANDING ── */
+.landing-header { margin-bottom: 40px; }
+.landing-header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+.landing-header h1 span { color: var(--accent); }
+.landing-header p { color: var(--muted); margin-top: 6px; font-size: 15px; }
+
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 40px;
+}
+.action-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px 24px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+.action-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px #5b8dee18;
+}
+.action-icon {
+  font-size: 28px;
+  margin-bottom: 14px;
+  display: block;
+}
+.action-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.action-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.activity-section h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 16px;
+}
+.activity-list { display: flex; flex-direction: column; gap: 8px; }
+.activity-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+.activity-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.activity-text { flex: 1; }
+.activity-time { color: var(--muted); font-size: 11px; }
+
+/* ── PANEL BUILDER ── */
+.builder-layout {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .builder-layout { grid-template-columns: 1fr; }
+}
+
+.panel-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.panel-section-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-inputs { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.search-row { display: flex; gap: 8px; }
+.search-input {
+  flex: 1;
+  padding: 9px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  outline: none;
+  transition: border 0.15s;
+}
+.search-input:focus { border-color: var(--accent); }
+.search-input::placeholder { color: var(--muted); }
+.search-input.exclude { border-color: #7f1d1d44; }
+.search-input.exclude:focus { border-color: var(--red); }
+select.search-input { cursor: pointer; }
+
+.label-small {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 4px;
+}
+
+.result-list { max-height: 480px; overflow-y: auto; }
+.result-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+  transition: background 0.1s;
+}
+.result-row:hover { background: var(--surface2); }
+.result-row:last-child { border-bottom: none; }
+.result-main { font-weight: 600; font-size: 13px; }
+.result-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.result-code { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+
+.btn-add {
+  padding: 5px 12px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+.btn-add:hover { opacity: 0.85; }
+
+/* laser color dots */
+.laser-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+.laser-Blue        { background: var(--blue); }
+.laser-Green       { background: var(--green); }
+.laser-Red         { background: var(--red); }
+.laser-Violet      { background: var(--violet); }
+.laser-Ultra-Violet { background: var(--uv); }
+
+/* panel table */
+.current-panel { min-height: 300px; }
+.panel-name-row {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.panel-name-input {
+  flex: 1;
+  padding: 7px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+}
+.panel-name-input:focus { border-color: var(--accent); }
+.panel-name-input::placeholder { color: var(--muted); font-weight: 400; }
+
+.btn-save {
+  padding: 7px 16px;
+  background: var(--green);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+.btn-save:hover { opacity: 0.85; }
+
+.btn-clear {
+  padding: 7px 12px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-clear:hover { color: var(--red); border-color: var(--red); }
+
+.panel-table-wrap { overflow-x: auto; }
+table.panel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.panel-table th {
+  padding: 8px 10px;
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.panel-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.panel-table tr:last-child td { border-bottom: none; }
+
+/* row color by laser */
+.row-blue   { background: var(--blue-bg); }
+.row-green  { background: var(--green-bg); }
+.row-red    { background: var(--red-bg); }
+.row-violet { background: var(--violet-bg); }
+.row-uv     { background: #3b076422; }
+.row-conflict { background: #7f1d1d44 !important; }
+
+.panel-marker { font-weight: 600; }
+.panel-code   { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+.panel-fluor  { font-size: 11px; }
+.panel-detector { font-size: 11px; color: var(--muted); }
+.conflict-badge {
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.dilution-input {
+  width: 80px;
+  padding: 4px 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  outline: none;
+}
+.dilution-input:focus { border-color: var(--accent); }
+
+.btn-remove {
+  padding: 4px 8px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-remove:hover { color: var(--red); border-color: var(--red); }
+
+.empty-state {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ── DATABASE VIEW ── */
+.db-toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.db-toolbar input, .db-toolbar select {
+  padding: 8px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  outline: none;
+}
+.db-toolbar input { flex: 1; min-width: 200px; }
+.db-toolbar input:focus, .db-toolbar select:focus { border-color: var(--accent); }
+
+.btn-secondary {
+  padding: 8px 16px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+.db-table-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+table.db-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.db-table th {
+  padding: 10px 14px;
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  background: var(--surface2);
+}
+.db-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.db-table tr:last-child td { border-bottom: none; }
+.db-table tr:hover td { background: var(--surface2); }
+
+.laser-badge {
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge-Blue        { background: var(--blue-bg);   color: var(--blue);   border: 1px solid #3b82f633; }
+.badge-Green       { background: var(--green-bg);  color: var(--green);  border: 1px solid #22c55e33; }
+.badge-Red         { background: var(--red-bg);    color: var(--red);    border: 1px solid #ef444433; }
+.badge-Violet      { background: var(--violet-bg); color: var(--violet); border: 1px solid #a855f733; }
+.badge-Ultra\ Violet { background: #3b076422; color: var(--uv); border: 1px solid #c084fc33; }
+
+.btn-icon {
+  padding: 4px 8px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: 4px;
+}
+.btn-icon:hover { color: var(--accent); border-color: var(--accent); }
+.btn-icon.danger:hover { color: var(--red); border-color: var(--red); }
+
+/* ── SAVED PANELS ── */
+.panels-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.saved-panel-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  transition: border-color 0.15s;
+}
+.saved-panel-card:hover { border-color: var(--accent); }
+.sp-name { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.sp-meta { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+.sp-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.sp-markers { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px; }
+.sp-marker-chip {
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--surface2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+/* ── SIGNOUT / INVENTORY ── */
+.signout-layout {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 900px) { .signout-layout { grid-template-columns: 1fr; } }
+
+.form-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+}
+.form-card h3 { font-size: 15px; font-weight: 600; margin-bottom: 20px; }
+.form-group { margin-bottom: 14px; }
+.form-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; display: block; text-transform: uppercase; letter-spacing: 0.3px; }
+.form-input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  outline: none;
+  transition: border 0.15s;
+}
+.form-input:focus { border-color: var(--accent); }
+.form-input::placeholder { color: var(--muted); }
+
+/* ── MODAL ── */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: #00000088;
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: var(--shadow);
+  position: relative;
+}
+.modal h3 { font-size: 17px; font-weight: 600; margin-bottom: 20px; }
+.modal-close {
+  position: absolute; top: 16px; right: 16px;
+  background: none; border: none; color: var(--muted);
+  font-size: 20px; cursor: pointer; line-height: 1;
+}
+.modal-close:hover { color: var(--text); }
+.modal-actions { display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; }
+
+/* ── PAGE HEADERS ── */
+.page-header {
+  margin-bottom: 28px;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.page-header-text h2 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+.page-header-text p { color: var(--muted); font-size: 13px; margin-top: 4px; }
+.page-header-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+/* ── TOAST ── */
+#toast {
+  position: fixed; bottom: 24px; right: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 20px;
+  font-size: 13px;
+  box-shadow: var(--shadow);
+  z-index: 9999;
+  transform: translateY(80px);
+  opacity: 0;
+  transition: all 0.3s;
+  max-width: 320px;
+}
+#toast.show { transform: translateY(0); opacity: 1; }
+#toast.success { border-color: var(--green); color: var(--green); }
+#toast.error   { border-color: var(--red);   color: var(--red);   }
+
+/* ── LOADER ── */
+.loader {
+  display: inline-block;
+  width: 16px; height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.page-loader {
+  padding: 60px;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">KDV <span>Panel</span></div>
+  <button class="nav-btn" onclick="showView('landing')">Home</button>
+  <button class="nav-btn" onclick="showView('builder')">Panel Builder</button>
+  <button class="nav-btn" onclick="showView('saved')">Saved Panels</button>
+  <button class="nav-btn" onclick="showView('database')">Database</button>
+  <button class="nav-btn" onclick="showView('signout')">Sign-out Log</button>
+  <div class="nav-spacer"></div>
+  <div class="nav-user" id="nav-user" style="display:none">
+    <div class="nav-avatar" id="nav-avatar"></div>
+    <span id="nav-name"></span>
+    <button class="btn-icon" onclick="logout()" style="font-size:11px">Sign out</button>
+  </div>
+</nav>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- LOGIN VIEW -->
+<div id="login-view">
+  <div class="login-card">
+    <div class="login-logo">KDV <span>Panel</span></div>
+    <div class="login-sub">Flow cytometry panel design tool</div>
+    <input type="text" id="login-name" placeholder="Your name (e.g. Tom)" autocomplete="name">
+    <input type="email" id="login-email" placeholder="Your email address" autocomplete="email">
+    <button class="btn-primary" onclick="sendMagicLink()" id="login-btn">Send magic link</button>
+    <div class="login-msg" id="login-msg"></div>
+    <div id="waiting-section" style="display:none; margin-top:16px;">
+      <div style="color:var(--muted); font-size:13px; margin-bottom:12px;">Check your email and click the link. Then enter the 6-digit code below:</div>
+      <input type="text" id="otp-input" placeholder="123456" style="text-align:center; font-size:20px; letter-spacing:8px; font-family:var(--mono);" maxlength="6">
+      <button class="btn-primary" onclick="verifyOTP()" style="margin-top:8px;">Verify</button>
+      <div class="login-msg" id="otp-msg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN APP (hidden until logged in) -->
+<div id="app" style="display:none">
+
+<!-- LANDING VIEW -->
+<div id="landing-view" class="view">
+  <div class="landing-header">
+    <h1>Welcome back, <span id="welcome-name">–</span></h1>
+    <p>What would you like to do today?</p>
+  </div>
+  <div class="action-grid">
+    <div class="action-card" onclick="showView('builder')">
+      <span class="action-icon">🧪</span>
+      <div class="action-title">Build a Panel</div>
+      <div class="action-desc">Design a new panel or load an existing one to continue working</div>
+    </div>
+    <div class="action-card" onclick="showView('saved')">
+      <span class="action-icon">📋</span>
+      <div class="action-title">Saved Panels</div>
+      <div class="action-desc">Browse and load panels saved by you and your colleagues</div>
+    </div>
+    <div class="action-card" onclick="showView('database')">
+      <span class="action-icon">🗄️</span>
+      <div class="action-title">Antibody Database</div>
+      <div class="action-desc">Browse, search and edit the full antibody collection</div>
+    </div>
+    <div class="action-card" onclick="openAddAntibody()">
+      <span class="action-icon">➕</span>
+      <div class="action-title">Add / Order Antibody</div>
+      <div class="action-desc">Register a new antibody or log an incoming order</div>
+    </div>
+    <div class="action-card" onclick="showView('signout')">
+      <span class="action-icon">📦</span>
+      <div class="action-title">Sign Out Backup</div>
+      <div class="action-desc">Log when you take a backup vial from the collection</div>
+    </div>
+  </div>
+  <div class="activity-section">
+    <h2>Recent activity</h2>
+    <div class="activity-list" id="activity-list">
+      <div class="page-loader"><span class="loader"></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- PANEL BUILDER VIEW -->
+<div id="builder-view" class="view">
+  <div class="page-header">
+    <div class="page-header-text">
+      <h2>Panel Builder</h2>
+      <p>Search antibodies and assemble your panel</p>
+    </div>
+  </div>
+  <div class="builder-layout">
+    <!-- Search -->
+    <div>
+      <div class="panel-section">
+        <div class="panel-section-header">🔍 Search Antibodies</div>
+        <div class="search-inputs">
+          <div>
+            <div class="label-small">Search by marker</div>
+            <input type="text" class="search-input" id="builder-search"
+              placeholder="e.g. CD8, FoxP3..." oninput="searchAntibodies()">
+          </div>
+          <div>
+            <div class="label-small" style="color:#f87171">Exclude</div>
+            <input type="text" class="search-input exclude" id="builder-exclude"
+              placeholder='e.g. "45 49" removes CD45, CD49' oninput="searchAntibodies()">
+          </div>
+          <div>
+            <div class="label-small">Filter by laser color</div>
+            <select class="search-input" id="builder-color" onchange="searchAntibodies()">
+              <option value="">All colors</option>
+              <option value="Blue">Blue (488 nm)</option>
+              <option value="Green">Green (561 nm)</option>
+              <option value="Red">Red (638 nm)</option>
+              <option value="Violet">Violet (405 nm)</option>
+              <option value="Ultra Violet">Ultra Violet (355 nm)</option>
+            </select>
+          </div>
+        </div>
+        <div class="result-list" id="search-results">
+          <div class="empty-state">Type to search antibodies</div>
+        </div>
+      </div>
+    </div>
+    <!-- Current panel -->
+    <div>
+      <div class="panel-section current-panel">
+        <div class="panel-section-header">🧬 Your Panel</div>
+        <div class="panel-name-row">
+          <input type="text" class="panel-name-input" id="panel-name"
+            placeholder="Panel name (e.g. Treg panel v1)">
+          <button class="btn-clear" onclick="clearPanel()">Clear</button>
+          <button class="btn-save" onclick="savePanel()">💾 Save</button>
+        </div>
+        <div class="panel-table-wrap">
+          <table class="panel-table" id="panel-table">
+            <thead>
+              <tr>
+                <th>Marker</th>
+                <th>Code</th>
+                <th>Fluorochrome</th>
+                <th>Laser</th>
+                <th>Symphony</th>
+                <th>Aurora</th>
+                <th>Dilution</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="panel-tbody">
+              <tr><td colspan="8"><div class="empty-state">No antibodies added yet</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SAVED PANELS VIEW -->
+<div id="saved-view" class="view">
+  <div class="page-header">
+    <div class="page-header-text">
+      <h2>Saved Panels</h2>
+      <p>Browse panels from the whole lab</p>
+    </div>
+    <div class="page-header-actions">
+      <button class="btn-secondary" onclick="showView('builder')">+ New Panel</button>
+    </div>
+  </div>
+  <div class="panels-grid" id="panels-grid">
+    <div class="page-loader"><span class="loader"></span></div>
+  </div>
+</div>
+
+<!-- DATABASE VIEW -->
+<div id="database-view" class="view">
+  <div class="page-header">
+    <div class="page-header-text">
+      <h2>Antibody Database</h2>
+      <p id="db-count"></p>
+    </div>
+    <div class="page-header-actions">
+      <button class="btn-secondary" onclick="openAddAntibody()">+ Add Antibody</button>
+    </div>
+  </div>
+  <div class="db-toolbar">
+    <input type="text" placeholder="Search marker, fluorochrome, code..." id="db-search" oninput="filterDB()">
+    <select id="db-color-filter" onchange="filterDB()">
+      <option value="">All colors</option>
+      <option value="Blue">Blue</option>
+      <option value="Green">Green</option>
+      <option value="Red">Red</option>
+      <option value="Violet">Violet</option>
+      <option value="Ultra Violet">Ultra Violet</option>
+    </select>
+  </div>
+  <div class="db-table-wrap">
+    <table class="db-table">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Marker</th>
+          <th>Fluorochrome</th>
+          <th>Laser Color</th>
+          <th>Clone</th>
+          <th>Company</th>
+          <th>Remarks</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="db-tbody">
+        <tr><td colspan="8"><div class="page-loader"><span class="loader"></span></div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- SIGN-OUT LOG VIEW -->
+<div id="signout-view" class="view">
+  <div class="page-header">
+    <div class="page-header-text">
+      <h2>Sign-out Log</h2>
+      <p>Log when you take a backup vial</p>
+    </div>
+  </div>
+  <div class="signout-layout">
+    <div class="form-card">
+      <h3>📦 Sign Out a Backup Vial</h3>
+      <div class="form-group">
+        <label class="form-label">Antibody</label>
+        <input type="text" class="form-input" id="so-search" placeholder="Search marker or code..." oninput="searchForSignout()">
+        <div id="so-results" style="margin-top:8px;"></div>
+        <input type="hidden" id="so-selected-id">
+        <div id="so-selected-display" style="margin-top:8px; display:none; padding:10px; background:var(--surface2); border-radius:var(--radius); font-size:13px;"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notes (optional)</label>
+        <input type="text" class="form-input" id="so-notes" placeholder="e.g. taking last vial, opening backup">
+      </div>
+      <button class="btn-primary" onclick="submitSignout()">Log Sign-out</button>
+    </div>
+    <div>
+      <div class="panel-section">
+        <div class="panel-section-header">📜 Recent Sign-outs</div>
+        <div id="signout-log-list" style="padding:8px 0;">
+          <div class="page-loader"><span class="loader"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- end #app -->
+
+<!-- ADD ANTIBODY MODAL -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('add-modal')">×</button>
+    <h3>Add Antibody</h3>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <div class="form-group">
+        <label class="form-label">Code</label>
+        <input type="text" class="form-input" id="add-code" placeholder="e.g. R13">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Marker *</label>
+        <input type="text" class="form-input" id="add-marker" placeholder="e.g. CD8a">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fluorochrome</label>
+        <input type="text" class="form-input" id="add-fluor" placeholder="e.g. APC">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Laser Color</label>
+        <select class="form-input" id="add-color">
+          <option value="">Select...</option>
+          <option>Blue</option><option>Green</option><option>Red</option>
+          <option>Violet</option><option>Ultra Violet</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Clone</label>
+        <input type="text" class="form-input" id="add-clone">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Company</label>
+        <input type="text" class="form-input" id="add-company">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Order #</label>
+        <input type="text" class="form-input" id="add-order">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Backup Count</label>
+        <input type="text" class="form-input" id="add-backup" placeholder="e.g. 1">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Remarks</label>
+      <input type="text" class="form-input" id="add-remarks">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('add-modal')">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 24px;" onclick="submitAddAntibody()">Add Antibody</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT ANTIBODY MODAL -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('edit-modal')">×</button>
+    <h3>Edit Antibody</h3>
+    <input type="hidden" id="edit-id">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <div class="form-group">
+        <label class="form-label">Code</label>
+        <input type="text" class="form-input" id="edit-code">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Marker</label>
+        <input type="text" class="form-input" id="edit-marker">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fluorochrome</label>
+        <input type="text" class="form-input" id="edit-fluor">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Laser Color</label>
+        <select class="form-input" id="edit-color">
+          <option value="">Select...</option>
+          <option>Blue</option><option>Green</option><option>Red</option>
+          <option>Violet</option><option>Ultra Violet</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Clone</label>
+        <input type="text" class="form-input" id="edit-clone">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Company</label>
+        <input type="text" class="form-input" id="edit-company">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Order #</label>
+        <input type="text" class="form-input" id="edit-order">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Backup Count</label>
+        <input type="text" class="form-input" id="edit-backup">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Remarks</label>
+      <input type="text" class="form-input" id="edit-remarks">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('edit-modal')">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 24px;" onclick="submitEditAntibody()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════
+// CONFIG — replace with your Supabase credentials
+// ════════════════════════════════════════════════════════
+const SUPABASE_URL  = 'https://ztkzvkojurvovxlxikvl.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0a3p2a29qdXJ2b3Z4bHhpa3ZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwNDY1MzgsImV4cCI6MjA5NTYyMjUzOH0.8Ib77FsTOswY3aJTUwqg0lMK9-s_VFWNMCxuSea9BtQ';
+
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_ANON);
+
+// ── State ─────────────────────────────────────────────
+let currentUser   = null;
+let userName      = '';
+let allAntibodies = [];
+let allFluorochromes = [];
+let currentPanel  = [];   // [{marker, code, fluorochrome, dilution, notes}]
+let dbFiltered    = [];
+
+// ── Fluorochrome lookup map ───────────────────────────
+let fluorMap = {};  // name -> {excitation_laser, emission_peak, symphony_detector, aurora_channel, brightness}
+
+// ════════════════════════════════════════════════════════
+// AUTH
+// ════════════════════════════════════════════════════════
+async function sendMagicLink() {
+  const email = document.getElementById('login-email').value.trim();
+  const name  = document.getElementById('login-name').value.trim();
+  const msg   = document.getElementById('login-msg');
+  const btn   = document.getElementById('login-btn');
+
+  if (!name)  { showLoginMsg('Please enter your name', true); return; }
+  if (!email) { showLoginMsg('Please enter your email', true); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+
+  localStorage.setItem('pending_name', name);
+  localStorage.setItem('pending_email', email);
+
+  const { error } = await db.auth.signInWithOtp({
+    email,
+    options: { shouldCreateUser: true }
+  });
+
+  if (error) {
+    showLoginMsg(error.message, true);
+    btn.disabled = false;
+    btn.textContent = 'Send magic link';
+    return;
+  }
+
+  showLoginMsg('✓ Check your email! Enter the 6-digit code below.');
+  document.getElementById('waiting-section').style.display = 'block';
+  btn.textContent = 'Resend';
+  btn.disabled = false;
+}
+
+async function verifyOTP() {
+  const email = localStorage.getItem('pending_email');
+  const token = document.getElementById('otp-input').value.trim();
+  const msg   = document.getElementById('otp-msg');
+
+  if (!token) { msg.textContent = 'Enter the code from your email'; return; }
+
+  const { data, error } = await db.auth.verifyOtp({
+    email, token, type: 'email'
+  });
+
+  if (error) {
+    msg.textContent = error.message;
+    msg.className = 'login-msg error';
+    return;
+  }
+
+  await initApp(data.user);
+}
+
+function showLoginMsg(txt, isError=false) {
+  const el = document.getElementById('login-msg');
+  el.textContent = txt;
+  el.className = 'login-msg' + (isError ? ' error' : '');
+}
+
+async function logout() {
+  await db.auth.signOut();
+  currentUser = null;
+  userName = '';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('login-view').style.display = 'flex';
+  document.getElementById('nav-user').style.display = 'none';
+}
+
+async function initApp(user) {
+  currentUser = user;
+  userName = localStorage.getItem('pending_name') || user.email.split('@')[0];
+
+  document.getElementById('login-view').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('nav-user').style.display = 'flex';
+  document.getElementById('nav-name').textContent = userName;
+  document.getElementById('nav-avatar').textContent = userName.charAt(0).toUpperCase();
+  document.getElementById('welcome-name').textContent = userName.split(' ')[0];
+
+  // Load data
+  await Promise.all([loadAntibodies(), loadFluorochromes()]);
+
+  showView('landing');
+  loadActivity();
+}
+
+// Check existing session on load
+db.auth.onAuthStateChange(async (event, session) => {
+  if (session?.user && !currentUser) {
+    await initApp(session.user);
+  }
+});
+
+// ════════════════════════════════════════════════════════
+// DATA LOADING
+// ════════════════════════════════════════════════════════
+async function loadAntibodies() {
+  const { data, error } = await db
+    .from('antibodies')
+    .select('*')
+    .order('marker');
+  if (!error) {
+    allAntibodies = data || [];
+    dbFiltered = [...allAntibodies];
+    renderDB();
+    document.getElementById('db-count').textContent = `${allAntibodies.length} antibodies`;
+  }
+}
+
+async function loadFluorochromes() {
+  const { data } = await db.from('fluorochromes').select('*');
+  if (data) {
+    allFluorochromes = data;
+    fluorMap = {};
+    data.forEach(f => { fluorMap[f.name.toLowerCase()] = f; });
+  }
+}
+
+function getFluorInfo(fluorName) {
+  if (!fluorName) return null;
+  return fluorMap[fluorName.toLowerCase()] || null;
+}
+
+// ════════════════════════════════════════════════════════
+// NAVIGATION
+// ════════════════════════════════════════════════════════
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+
+  const view = document.getElementById(name + '-view');
+  if (view) view.classList.add('active');
+
+  const navBtns = document.querySelectorAll('.nav-btn');
+  navBtns.forEach(b => {
+    if (b.getAttribute('onclick')?.includes(name)) b.classList.add('active');
+  });
+
+  if (name === 'saved')    loadSavedPanels();
+  if (name === 'signout')  loadSignoutLog();
+  if (name === 'landing')  loadActivity();
+  if (name === 'database') renderDB();
+}
+
+// ════════════════════════════════════════════════════════
+// PANEL BUILDER
+// ════════════════════════════════════════════════════════
+let searchTimeout = null;
+
+function searchAntibodies() {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(_doSearch, 120);
+}
+
+function _doSearch() {
+  const term    = document.getElementById('builder-search').value.trim().toLowerCase();
+  const exclude = document.getElementById('builder-exclude').value.trim().toLowerCase();
+  const color   = document.getElementById('builder-color').value;
+  const el      = document.getElementById('search-results');
+
+  let results = allAntibodies;
+
+  if (term) {
+    results = results.filter(a =>
+      (a.marker || '').toLowerCase().includes(term) ||
+      (a.code   || '').toLowerCase().includes(term)
+    );
+  }
+
+  if (exclude) {
+    const excTerms = exclude.split(/\s+/).filter(Boolean);
+    results = results.filter(a => {
+      const marker = (a.marker || '').toLowerCase();
+      return !excTerms.some(t => marker.includes(t));
+    });
+  }
+
+  if (color) {
+    results = results.filter(a => a.box_color === color);
+  }
+
+  if (!term && !exclude && !color) {
+    el.innerHTML = '<div class="empty-state">Type to search antibodies</div>';
+    return;
+  }
+
+  if (!results.length) {
+    el.innerHTML = '<div class="empty-state">No results found</div>';
+    return;
+  }
+
+  el.innerHTML = results.slice(0, 40).map(a => {
+    const fi = getFluorInfo(a.fluorochrome);
+    const laser = fi ? fi.excitation_laser : '';
+    const colorClass = laserToClass(a.box_color);
+    return `
+      <div class="result-row">
+        <div>
+          <div class="result-main">
+            <span class="laser-dot ${colorClass}"></span>${a.marker || '—'}
+          </div>
+          <div class="result-sub">
+            <span class="result-code">${a.code || ''}</span>
+            ${a.fluorochrome ? ' · ' + a.fluorochrome : ''}
+            ${laser ? ' · ' + laser + ' nm' : ''}
+            ${a.clone ? ' · ' + a.clone : ''}
+          </div>
+        </div>
+        <button class="btn-add" onclick='addToPanel(${JSON.stringify(a)})'>+ Add</button>
+      </div>`;
+  }).join('');
+}
+
+function laserToClass(boxColor) {
+  if (!boxColor) return '';
+  return 'laser-' + boxColor.replace(' ', '-');
+}
+
+function laserToRowClass(laser) {
+  const map = { 488: 'row-blue', 561: 'row-green', 638: 'row-red', 405: 'row-violet', 355: 'row-uv' };
+  return map[laser] || '';
+}
+
+function addToPanel(ab) {
+  const fi = getFluorInfo(ab.fluorochrome);
+  currentPanel.push({
+    marker:      ab.marker || '',
+    code:        ab.code   || '',
+    fluorochrome: ab.fluorochrome || '',
+    laser:       fi ? fi.excitation_laser  : '',
+    emission:    fi ? fi.emission_peak     : '',
+    symphony:    fi ? fi.symphony_detector : '',
+    aurora:      fi ? fi.aurora_channel    : '',
+    brightness:  fi ? fi.brightness        : '',
+    box_color:   ab.box_color || '',
+    dilution:    '',
+    notes:       ''
+  });
+  renderPanel();
+  toast(`${ab.marker} added to panel`, 'success');
+}
+
+function removeFromPanel(idx) {
+  currentPanel.splice(idx, 1);
+  renderPanel();
+}
+
+function clearPanel() {
+  if (currentPanel.length === 0) return;
+  if (!confirm('Clear the entire panel?')) return;
+  currentPanel = [];
+  renderPanel();
+}
+
+function renderPanel() {
+  const tbody = document.getElementById('panel-tbody');
+  if (!currentPanel.length) {
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No antibodies added yet</div></td></tr>';
+    return;
+  }
+
+  // Find conflicts: same symphony detector used more than once
+  const detectorCounts = {};
+  currentPanel.forEach(r => {
+    if (r.symphony) detectorCounts[r.symphony] = (detectorCounts[r.symphony] || 0) + 1;
+  });
+
+  tbody.innerHTML = currentPanel.map((r, i) => {
+    const isConflict = r.symphony && detectorCounts[r.symphony] > 1;
+    const rowClass = isConflict ? 'row-conflict' : laserToRowClass(r.laser);
+    return `
+      <tr class="${rowClass}">
+        <td class="panel-marker">
+          <span class="laser-dot ${laserToClass(r.box_color)}"></span>${r.marker}
+          ${isConflict ? '<br><span class="conflict-badge">⚠ CONFLICT</span>' : ''}
+        </td>
+        <td class="panel-code">${r.code}</td>
+        <td class="panel-fluor">${r.fluorochrome}</td>
+        <td class="panel-detector">${r.laser ? r.laser + ' nm' : ''}</td>
+        <td class="panel-detector">${r.symphony}</td>
+        <td class="panel-detector">${r.aurora}</td>
+        <td>
+          <input type="text" class="dilution-input" placeholder="1:100"
+            value="${r.dilution}"
+            onchange="currentPanel[${i}].dilution=this.value">
+        </td>
+        <td>
+          <button class="btn-remove" onclick="removeFromPanel(${i})">✕</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+async function savePanel() {
+  const name = document.getElementById('panel-name').value.trim();
+  if (!name)            { toast('Please enter a panel name', 'error'); return; }
+  if (!currentPanel.length) { toast('Panel is empty', 'error'); return; }
+
+  const { data: panel, error: pe } = await db.from('panels').insert({
+    name, user_name: userName, user_email: currentUser.email
+  }).select().single();
+
+  if (pe) { toast('Error saving panel: ' + pe.message, 'error'); return; }
+
+  const rows = currentPanel.map((r, i) => ({
+    panel_id: panel.id, ...r, sort_order: i
+  }));
+
+  const { error: re } = await db.from('panel_rows').insert(rows);
+  if (re) { toast('Error saving rows: ' + re.message, 'error'); return; }
+
+  toast(`Panel "${name}" saved!`, 'success');
+}
+
+// ════════════════════════════════════════════════════════
+// SAVED PANELS
+// ════════════════════════════════════════════════════════
+async function loadSavedPanels() {
+  const grid = document.getElementById('panels-grid');
+  grid.innerHTML = '<div class="page-loader"><span class="loader"></span></div>';
+
+  const { data, error } = await db
+    .from('panels')
+    .select('*, panel_rows(*)')
+    .order('created_at', { ascending: false });
+
+  if (error || !data?.length) {
+    grid.innerHTML = '<div class="empty-state">No saved panels yet</div>';
+    return;
+  }
+
+  grid.innerHTML = data.map(p => {
+    const rows  = p.panel_rows || [];
+    const date  = new Date(p.created_at).toLocaleDateString('nl-NL');
+    const chips = rows.slice(0, 6).map(r =>
+      `<span class="sp-marker-chip">${r.marker}</span>`
+    ).join('') + (rows.length > 6 ? `<span class="sp-marker-chip">+${rows.length-6}</span>` : '');
+
+    return `
+      <div class="saved-panel-card">
+        <div class="sp-name">${p.name}</div>
+        <div class="sp-meta">
+          ${p.user_name} · ${date} · ${rows.length} markers
+        </div>
+        <div class="sp-markers">${chips}</div>
+        <div class="sp-actions">
+          <button class="btn-secondary" style="font-size:12px;padding:6px 12px"
+            onclick="loadPanelIntoBuilder('${p.id}')">Load into Builder</button>
+          ${p.user_email === currentUser?.email ?
+            `<button class="btn-icon danger" onclick="deletePanel('${p.id}')">Delete</button>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function loadPanelIntoBuilder(panelId) {
+  const { data } = await db
+    .from('panel_rows')
+    .select('*')
+    .eq('panel_id', panelId)
+    .order('sort_order');
+
+  if (data) {
+    currentPanel = data.map(r => {
+      const fi = getFluorInfo(r.fluorochrome);
+      return {
+        marker: r.marker, code: r.code, fluorochrome: r.fluorochrome,
+        laser:      fi?.excitation_laser  || '',
+        emission:   fi?.emission_peak     || '',
+        symphony:   fi?.symphony_detector || '',
+        aurora:     fi?.aurora_channel    || '',
+        brightness: fi?.brightness        || '',
+        box_color:  '',
+        dilution:   r.dilution || '',
+        notes:      r.notes    || ''
+      };
+    });
+    renderPanel();
+    showView('builder');
+    toast('Panel loaded into builder', 'success');
+  }
+}
+
+async function deletePanel(id) {
+  if (!confirm('Delete this panel?')) return;
+  await db.from('panels').delete().eq('id', id);
+  toast('Panel deleted');
+  loadSavedPanels();
+}
+
+// ════════════════════════════════════════════════════════
+// DATABASE VIEW
+// ════════════════════════════════════════════════════════
+function filterDB() {
+  const term  = document.getElementById('db-search').value.trim().toLowerCase();
+  const color = document.getElementById('db-color-filter').value;
+
+  dbFiltered = allAntibodies.filter(a => {
+    const matchTerm = !term ||
+      (a.marker       || '').toLowerCase().includes(term) ||
+      (a.fluorochrome || '').toLowerCase().includes(term) ||
+      (a.code         || '').toLowerCase().includes(term) ||
+      (a.clone        || '').toLowerCase().includes(term);
+    const matchColor = !color || a.box_color === color;
+    return matchTerm && matchColor;
+  });
+
+  renderDB();
+}
+
+function renderDB() {
+  const tbody = document.getElementById('db-tbody');
+  if (!dbFiltered.length) {
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No antibodies found</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = dbFiltered.map(a => {
+    const badgeClass = 'badge-' + (a.box_color || '').replace(' ', '\\ ');
+    return `
+      <tr>
+        <td><span style="font-family:var(--mono);font-size:12px;color:var(--accent)">${a.code || ''}</span></td>
+        <td><strong>${a.marker || ''}</strong></td>
+        <td>${a.fluorochrome || ''}</td>
+        <td><span class="laser-badge ${badgeClass}">${a.box_color || ''}</span></td>
+        <td style="color:var(--muted)">${a.clone || ''}</td>
+        <td style="color:var(--muted)">${a.company || ''}</td>
+        <td style="color:var(--muted);font-size:12px">${a.remarks || ''}</td>
+        <td style="white-space:nowrap">
+          <button class="btn-icon" onclick='openEditAntibody(${JSON.stringify(a)})'>Edit</button>
+          <button class="btn-icon danger" onclick="deleteAntibody('${a.id}')">Delete</button>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════
+// ADD / EDIT ANTIBODY
+// ════════════════════════════════════════════════════════
+function openAddAntibody() {
+  ['add-code','add-marker','add-fluor','add-clone','add-company','add-order','add-backup','add-remarks']
+    .forEach(id => document.getElementById(id).value = '');
+  document.getElementById('add-color').value = '';
+  openModal('add-modal');
+  showView('database');
+}
+
+async function submitAddAntibody() {
+  const marker = document.getElementById('add-marker').value.trim();
+  if (!marker) { toast('Marker is required', 'error'); return; }
+
+  const { error } = await db.from('antibodies').insert({
+    code:          document.getElementById('add-code').value.trim(),
+    marker,
+    fluorochrome:  document.getElementById('add-fluor').value.trim(),
+    box_color:     document.getElementById('add-color').value,
+    clone:         document.getElementById('add-clone').value.trim(),
+    company:       document.getElementById('add-company').value.trim(),
+    order_number:  document.getElementById('add-order').value.trim(),
+    backup_count:  document.getElementById('add-backup').value.trim(),
+    remarks:       document.getElementById('add-remarks').value.trim(),
+    updated_by:    userName
+  });
+
+  if (error) { toast('Error: ' + error.message, 'error'); return; }
+
+  closeModal('add-modal');
+  toast('Antibody added!', 'success');
+  await loadAntibodies();
+}
+
+function openEditAntibody(a) {
+  document.getElementById('edit-id').value      = a.id;
+  document.getElementById('edit-code').value    = a.code || '';
+  document.getElementById('edit-marker').value  = a.marker || '';
+  document.getElementById('edit-fluor').value   = a.fluorochrome || '';
+  document.getElementById('edit-color').value   = a.box_color || '';
+  document.getElementById('edit-clone').value   = a.clone || '';
+  document.getElementById('edit-company').value = a.company || '';
+  document.getElementById('edit-order').value   = a.order_number || '';
+  document.getElementById('edit-backup').value  = a.backup_count || '';
+  document.getElementById('edit-remarks').value = a.remarks || '';
+  openModal('edit-modal');
+}
+
+async function submitEditAntibody() {
+  const id = document.getElementById('edit-id').value;
+  const { error } = await db.from('antibodies').update({
+    code:          document.getElementById('edit-code').value.trim(),
+    marker:        document.getElementById('edit-marker').value.trim(),
+    fluorochrome:  document.getElementById('edit-fluor').value.trim(),
+    box_color:     document.getElementById('edit-color').value,
+    clone:         document.getElementById('edit-clone').value.trim(),
+    company:       document.getElementById('edit-company').value.trim(),
+    order_number:  document.getElementById('edit-order').value.trim(),
+    backup_count:  document.getElementById('edit-backup').value.trim(),
+    remarks:       document.getElementById('edit-remarks').value.trim(),
+    updated_at:    new Date().toISOString(),
+    updated_by:    userName
+  }).eq('id', id);
+
+  if (error) { toast('Error: ' + error.message, 'error'); return; }
+  closeModal('edit-modal');
+  toast('Antibody updated!', 'success');
+  await loadAntibodies();
+}
+
+async function deleteAntibody(id) {
+  if (!confirm('Delete this antibody from the database?')) return;
+  const { error } = await db.from('antibodies').delete().eq('id', id);
+  if (error) { toast('Error: ' + error.message, 'error'); return; }
+  toast('Antibody deleted');
+  await loadAntibodies();
+}
+
+// ════════════════════════════════════════════════════════
+// SIGN-OUT LOG
+// ════════════════════════════════════════════════════════
+let soSelected = null;
+
+function searchForSignout() {
+  const term = document.getElementById('so-search').value.trim().toLowerCase();
+  const el   = document.getElementById('so-results');
+  if (!term) { el.innerHTML = ''; return; }
+
+  const results = allAntibodies.filter(a =>
+    (a.marker || '').toLowerCase().includes(term) ||
+    (a.code   || '').toLowerCase().includes(term)
+  ).slice(0, 8);
+
+  el.innerHTML = results.map(a => `
+    <div style="padding:8px 10px; background:var(--surface2); border-radius:var(--radius);
+      margin-bottom:4px; cursor:pointer; font-size:13px; border:1px solid var(--border);"
+      onclick="selectForSignout(${JSON.stringify(a)})">
+      <strong>${a.marker}</strong>
+      <span style="color:var(--muted)"> · ${a.fluorochrome || ''} · ${a.code || ''}</span>
+    </div>`).join('');
+}
+
+function selectForSignout(a) {
+  soSelected = a;
+  document.getElementById('so-results').innerHTML = '';
+  document.getElementById('so-search').value = '';
+  const disp = document.getElementById('so-selected-display');
+  disp.style.display = 'block';
+  disp.innerHTML = `
+    <strong>${a.marker}</strong> · ${a.fluorochrome || ''} · 
+    <span style="font-family:var(--mono);color:var(--accent)">${a.code || ''}</span>
+    <button class="btn-icon" style="margin-left:8px;font-size:11px"
+      onclick="soSelected=null;document.getElementById('so-selected-display').style.display='none'">✕</button>`;
+}
+
+async function submitSignout() {
+  if (!soSelected) { toast('Please select an antibody first', 'error'); return; }
+  const notes = document.getElementById('so-notes').value.trim();
+
+  const { error } = await db.from('signout_log').insert({
+    antibody_code:         soSelected.code,
+    antibody_marker:       soSelected.marker,
+    antibody_fluorochrome: soSelected.fluorochrome,
+    taken_by:              userName,
+    notes
+  });
+
+  if (error) { toast('Error: ' + error.message, 'error'); return; }
+
+  soSelected = null;
+  document.getElementById('so-selected-display').style.display = 'none';
+  document.getElementById('so-notes').value = '';
+  toast('Sign-out logged!', 'success');
+  loadSignoutLog();
+}
+
+async function loadSignoutLog() {
+  const el = document.getElementById('signout-log-list');
+  const { data } = await db
+    .from('signout_log')
+    .select('*')
+    .order('taken_at', { ascending: false })
+    .limit(50);
+
+  if (!data?.length) {
+    el.innerHTML = '<div class="empty-state">No sign-outs logged yet</div>';
+    return;
+  }
+
+  el.innerHTML = data.map(r => {
+    const date = new Date(r.taken_at).toLocaleString('nl-NL', {
+      day:'2-digit', month:'2-digit', year:'numeric',
+      hour:'2-digit', minute:'2-digit'
+    });
+    return `
+      <div class="activity-item">
+        <div class="activity-dot" style="background:var(--violet)"></div>
+        <div class="activity-text">
+          <strong>${r.taken_by}</strong> signed out
+          <strong>${r.antibody_marker}</strong> ${r.antibody_fluorochrome || ''}
+          <span style="font-family:var(--mono);font-size:11px;color:var(--accent)">(${r.antibody_code || ''})</span>
+          ${r.notes ? `<span style="color:var(--muted)"> — ${r.notes}</span>` : ''}
+        </div>
+        <div class="activity-time">${date}</div>
+      </div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════
+// ACTIVITY FEED
+// ════════════════════════════════════════════════════════
+async function loadActivity() {
+  const el = document.getElementById('activity-list');
+
+  const [{ data: signouts }, { data: panels }] = await Promise.all([
+    db.from('signout_log').select('*').order('taken_at', { ascending: false }).limit(5),
+    db.from('panels').select('*').order('created_at', { ascending: false }).limit(5)
+  ]);
+
+  const items = [
+    ...(signouts || []).map(r => ({
+      time: new Date(r.taken_at),
+      text: `<strong>${r.taken_by}</strong> signed out <strong>${r.antibody_marker}</strong> ${r.antibody_fluorochrome || ''}`,
+      color: 'var(--violet)'
+    })),
+    ...(panels || []).map(p => ({
+      time: new Date(p.created_at),
+      text: `<strong>${p.user_name}</strong> saved panel <strong>${p.name}</strong>`,
+      color: 'var(--green)'
+    }))
+  ].sort((a, b) => b.time - a.time).slice(0, 8);
+
+  if (!items.length) {
+    el.innerHTML = '<div class="empty-state">No recent activity</div>';
+    return;
+  }
+
+  el.innerHTML = items.map(item => {
+    const date = item.time.toLocaleString('nl-NL', {
+      day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'
+    });
+    return `
+      <div class="activity-item">
+        <div class="activity-dot" style="background:${item.color}"></div>
+        <div class="activity-text">${item.text}</div>
+        <div class="activity-time">${date}</div>
+      </div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════
+// MODAL HELPERS
+// ════════════════════════════════════════════════════════
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) overlay.classList.remove('open');
+  });
+});
+
+// ════════════════════════════════════════════════════════
+// TOAST
+// ════════════════════════════════════════════════════════
+let toastTimeout;
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => { el.className = ''; }, 3000);
+}
+</script>
+</body>
+</html>
