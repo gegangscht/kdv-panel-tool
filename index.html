@@ -1467,7 +1467,7 @@ async function loadSavedPanels() {
       <div class="sp-actions">
         <button class="btn-save" style="font-size:12px;padding:6px 14px" onclick="usePanelForExperiment('${p.id}','${p.name.replace(/'/g,"\'")}')">Use Panel →</button>
         <button class="btn-secondary" style="font-size:12px;padding:6px 12px" onclick="loadPanelIntoBuilder('${p.id}')">Edit</button>
-        <button class="btn-secondary" style="font-size:12px;padding:6px 12px" onclick="duplicatePanel('${p.id}','${p.name.replace(/'/g,\"\'\").replace(/"/g,'&quot;')}')">Duplicate</button>
+        <button class="btn-secondary" style="font-size:12px;padding:6px 12px" onclick="duplicatePanel(this)" data-id="${p.id}" data-name="${p.name.replace(/"/g,'&quot;')}">Duplicate</button>
         ${p.user_name === userName ? `<button class="btn-icon danger" onclick="deletePanel('${p.id}')">Delete</button>` : ''}
       </div>
     </div>`;
@@ -1507,7 +1507,13 @@ async function deletePanel(id) {
   toast('Deleted'); loadSavedPanels();
 }
 
-async function duplicatePanel(panelId, panelName) {
+async function duplicatePanel(btnOrId, panelName) {
+  let panelId = typeof btnOrId === 'string' ? btnOrId : btnOrId.dataset.id;
+  if (!panelName && typeof btnOrId !== 'string') panelName = btnOrId.dataset.name;
+  if (!panelName) {
+    const { data } = await db.from('panels').select('name').eq('id', panelId).single();
+    panelName = data?.name || 'Panel';
+  }
   const newName = prompt('Name for the duplicate:', panelName + ' (copy)');
   if (!newName?.trim()) return;
 
@@ -1528,52 +1534,6 @@ async function duplicatePanel(panelId, panelName) {
   }
   toast(`Duplicated as "${newName.trim()}"`, 'success');
   loadSavedPanels();
-}
-
-// ── DATABASE ──────────────────────────────────────────────
-function filterDB() {
-  const term  = document.getElementById('db-search').value.trim().toLowerCase();
-  const color = document.getElementById('db-color-filter').value;
-  dbFiltered = allAntibodies.filter(a => {
-    const match = !term ||
-      (a.marker||'').toLowerCase().includes(term) ||
-      (a.fluorochrome||'').toLowerCase().includes(term) ||
-      (a.code||'').toLowerCase().includes(term) ||
-      (a.clone||'').toLowerCase().includes(term);
-    return match && (!color || a.box_color === color);
-  });
-  renderDB();
-}
-
-function renderDB() {
-  const tbody = document.getElementById('db-tbody');
-  if (!dbFiltered.length) {
-    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No antibodies found</div></td></tr>';
-    return;
-  }
-  tbody.innerHTML = dbFiltered.map(a => {
-    const bc = (a.box_color||'').replace(' ','-');
-    return `<tr>
-      <td><span style="font-family:var(--mono);font-size:12px;color:var(--accent)">${a.code||''}</span></td>
-      <td><strong>${a.marker||''}</strong></td>
-      <td>${a.fluorochrome||''}</td>
-      <td><span class="laser-badge badge-${bc}">${a.box_color||''}</span></td>
-      <td style="color:var(--muted)">${a.clone||''}</td>
-      <td style="color:var(--muted)">${a.company||''}</td>
-      <td style="color:var(--muted);font-size:12px">${a.remarks||''}</td>
-      <td style="white-space:nowrap">
-        <button class="btn-icon" onclick='openEditAntibody(${JSON.stringify(a)})'>Edit</button>
-        <button class="btn-icon danger" onclick="deleteAntibody('${a.id}')">Delete</button>
-      </td>
-    </tr>`;
-  }).join('');
-}
-
-// ── ADD / EDIT ANTIBODY ───────────────────────────────────
-function openAddAntibody() {
-  ['add-code','add-marker','add-fluor','add-clone','add-company','add-order','add-backup','add-remarks'].forEach(id => document.getElementById(id).value='');
-  document.getElementById('add-color').value='';
-  openModal('add-modal');
 }
 
 async function submitAddAntibody() {
