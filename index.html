@@ -466,7 +466,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('similarity');closeMenu()">Similarity</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v33</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v34</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -653,6 +653,18 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
               <tr><td colspan="8"><div class="empty-state">No antibodies added yet</div></td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- Similarity mini-heatmap -->
+      <div class="panel-section" style="margin-top:16px;" id="sim-panel-section">
+        <div class="panel-section-header" style="cursor:pointer;user-select:none;"
+          onclick="togglePanelSimilarity()">
+          🔬 Spectral Similarity — current panel
+          <span style="margin-left:auto;font-size:11px;color:var(--muted)" id="sim-panel-toggle-label">hide ▲</span>
+        </div>
+        <div id="sim-panel-body" style="padding:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;">
+          <div style="color:var(--muted);font-size:13px;">Add antibodies to your panel to see similarity scores.</div>
         </div>
       </div>
 
@@ -1574,6 +1586,7 @@ function savePanelToLocal() {
   localStorage.setItem('kdv_current_panel', JSON.stringify(currentPanel));
   localStorage.setItem('kdv_current_livedead', JSON.stringify(currentLiveDead));
   localStorage.setItem('kdv_panel_name', document.getElementById('panel-name')?.value || '');
+  setTimeout(renderPanelSimilarity, 50);
 }
 
 function restorePanelFromLocal() {
@@ -1599,7 +1612,15 @@ function restorePanelFromLocal() {
       const el = document.getElementById('panel-notes');
       if (el) el.value = notes;
     }
+    // Restore sim hidden state
+    if (localStorage.getItem('kdv_sim_hidden') === '1') {
+      const body  = document.getElementById('sim-panel-body');
+      const label = document.getElementById('sim-panel-toggle-label');
+      if (body)  body.style.display = 'none';
+      if (label) label.textContent  = 'show ▼';
+    }
   } catch(e) {}
+  setTimeout(renderPanelSimilarity, 100);
 }
 
 function laserToRowClass(laser) {
@@ -2669,6 +2690,97 @@ function renderFMOGrid(surfaceRows) {
   });
   html += '</tbody>';
   table.innerHTML = html;
+}
+
+function togglePanelSimilarity() {
+  const body  = document.getElementById('sim-panel-body');
+  const label = document.getElementById('sim-panel-toggle-label');
+  if (!body) return;
+  const hidden = body.style.display === 'none';
+  body.style.display  = hidden ? 'block' : 'none';
+  label.textContent   = hidden ? 'hide ▲' : 'show ▼';
+  localStorage.setItem('kdv_sim_hidden', hidden ? '0' : '1');
+}
+
+function renderPanelSimilarity() {
+  const body = document.getElementById('sim-panel-body');
+  if (!body || body.style.display === 'none') return;
+
+  // Get unique fluorochromes in current panel
+  const fluors = [...new Set(currentPanel.map(r => r.fluorochrome).filter(Boolean))];
+  if (fluors.length < 2) {
+    body.innerHTML = '<div style="color:var(--muted);font-size:13px;">Add at least 2 antibodies to see similarity.</div>';
+    return;
+  }
+
+  // Map to similarity matrix indices
+  const entries = fluors.map(f => ({
+    name: f,
+    idx: SIMILARITY_DYES.findIndex(d => d.toLowerCase() === f.toLowerCase() ||
+      d.toLowerCase().replace(/[^a-z0-9]/g,'') === f.toLowerCase().replace(/[^a-z0-9]/g,''))
+  })).filter(e => e.idx >= 0);
+
+  if (entries.length < 2) {
+    body.innerHTML = '<div style="color:var(--muted);font-size:13px;">No similarity data available for these fluorochromes yet.</div>';
+    return;
+  }
+
+  const m = entries.length;
+  const cellSize = Math.max(36, Math.min(60, Math.floor(600/m)));
+
+  function cellColor(val, isdiag) {
+    if (isdiag) return '#334155';
+    if (val >= 0.7) return '#cc0000';
+    if (val >= 0.5) return '#8b2000';
+    if (val >= 0.3) return '#7a5a00';
+    return '#1a3a1a';
+  }
+  function textColor(val, isdiag) {
+    if (isdiag) return '#64748b';
+    return '#ffffff';
+  }
+
+  let html = '<table style="border-collapse:collapse;font-size:11px;">';
+  // Header
+  html += '<thead><tr><th style="min-width:120px"></th>';
+  entries.forEach(e => {
+    html += `<th style="width:${cellSize}px;padding:2px;text-align:center;">
+      <div style="transform:rotate(-40deg);transform-origin:left bottom;white-space:nowrap;font-size:9px;color:var(--muted);height:50px;display:flex;align-items:flex-end;">${e.name}</div>
+    </th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  // Rows
+  entries.forEach(row => {
+    html += `<tr><td style="text-align:right;padding:2px 8px;white-space:nowrap;font-size:10px;color:var(--text)">${row.name}</td>`;
+    entries.forEach(col => {
+      const val    = SIMILARITY_MATRIX[row.idx][col.idx];
+      const isdiag = row.idx === col.idx;
+      const bg  = cellColor(val, isdiag);
+      const tc  = textColor(val, isdiag);
+      const display = isdiag ? '—' : val.toFixed(2);
+      const warn = !isdiag && val >= 0.5 ? 'outline:2px solid #ff4444;outline-offset:-2px;' : '';
+      html += `<td style="width:${cellSize}px;height:${cellSize}px;text-align:center;background:${bg};color:${tc};${warn}border:1px solid #00000022;"
+        title="${row.name} vs ${col.name}: ${val.toFixed(3)}">${display}</td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+
+  // Show any high-similarity warnings as text
+  const warnings = [];
+  for (let i=0; i<entries.length; i++) {
+    for (let j=i+1; j<entries.length; j++) {
+      const val = SIMILARITY_MATRIX[entries[i].idx][entries[j].idx];
+      if (val >= 0.5) warnings.push(`<span style="color:var(--red)">⚠ ${entries[i].name} & ${entries[j].name}: ${val.toFixed(2)}</span>`);
+    }
+  }
+  if (warnings.length) {
+    html += `<div style="margin-top:10px;font-size:12px;display:flex;flex-wrap:wrap;gap:8px;">${warnings.join('')}</div>`;
+  }
+
+  body.innerHTML = html;
 }
 
 function markTitrated(code, marker, fluorochrome, checked) {
