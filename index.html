@@ -464,9 +464,10 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('experiment');closeMenu()">Experiment</button>
     <button class="nav-btn" onclick="showView('dilutions');closeMenu()">Dilution DB</button>
     <button class="nav-btn" onclick="showView('similarity');closeMenu()">Similarity</button>
+    <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v34</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v35</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -1056,6 +1057,114 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   <div id="sim-tooltip" style="display:none;position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;box-shadow:var(--shadow);z-index:9999;pointer-events:none;"></div>
 </div>
 
+
+<!-- PROMPT GENERATOR VIEW -->
+<div id="prompt-view" class="view">
+  <div class="page-header">
+    <div class="page-header-text">
+      <h2>AI Panel Design — Prompt Generator</h2>
+      <p>Fill in your requirements, generate a prompt, paste it into Claude or ChatGPT</p>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;">
+
+    <!-- Left: inputs -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <div class="form-card">
+        <h3 style="margin-bottom:16px;font-size:14px">Experiment Goal</h3>
+        <div class="form-group">
+          <label class="form-label">Biological question / goal</label>
+          <textarea class="form-input" id="pg-goal" rows="3"
+            placeholder="e.g. Characterize T cell subsets and Tregs in tumor, including CD4, CD8, FoxP3, and activation markers. Mouse samples, spleen and tumor tissue."
+            style="resize:vertical;min-height:80px"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Max panel size (number of markers)</label>
+          <input type="number" class="form-input" id="pg-maxsize" value="12" min="3" max="40">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Instrument</label>
+          <select class="form-input" id="pg-instrument">
+            <option value="aurora">Cytek Aurora (spectral, 5 lasers: 355/405/488/561/638 nm)</option>
+            <option value="symphony">BD Symphony (conventional, UV/Violet/Blue/Yellow-Green/Red)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-card">
+        <h3 style="margin-bottom:16px;font-size:14px">Markers</h3>
+        <div class="form-group">
+          <label class="form-label">Markers I want — from existing stock</label>
+          <textarea class="form-input" id="pg-markers-stock" rows="3"
+            placeholder="e.g. CD45, CD3, CD4, CD8, FoxP3, Ki67&#10;One per line or comma separated. The AI will see all available fluorochromes for each."
+            style="resize:vertical;min-height:80px"></textarea>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">These will be matched against your database automatically</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Markers I want — may need to order</label>
+          <textarea class="form-input" id="pg-markers-order" rows="2"
+            placeholder="e.g. TCF1, TOX, TIM3&#10;AI will suggest which fluorochrome to buy"
+            style="resize:vertical;min-height:60px"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Markers to avoid</label>
+          <input type="text" class="form-input" id="pg-avoid"
+            placeholder="e.g. CD19, CD11b (if already in dump channel)">
+        </div>
+      </div>
+
+      <div class="form-card">
+        <h3 style="margin-bottom:16px;font-size:14px">Options</h3>
+        <div class="form-group">
+          <label class="form-label">Allow ordering new antibodies?</label>
+          <select class="form-input" id="pg-ordering">
+            <option value="both">Yes — give options with and without ordering</option>
+            <option value="stock">No — use existing stock only</option>
+            <option value="order">Suggest best panel regardless of stock</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Number of panel options to suggest</label>
+          <select class="form-input" id="pg-options">
+            <option value="2">2 options</option>
+            <option value="3" selected>3 options</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Additional instructions (optional)</label>
+          <input type="text" class="form-input" id="pg-extra"
+            placeholder="e.g. Include a dump channel, avoid tandems if possible">
+        </div>
+      </div>
+
+      <button class="btn-primary" onclick="generatePrompt()" style="padding:14px">
+        ⚡ Generate Prompt
+      </button>
+    </div>
+
+    <!-- Right: output -->
+    <div>
+      <div class="form-card" style="height:100%;min-height:400px;display:flex;flex-direction:column;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <h3 style="font-size:14px">Generated Prompt</h3>
+          <button class="btn-secondary" onclick="copyPrompt()" id="copy-btn" style="font-size:12px;padding:6px 14px">
+            📋 Copy
+          </button>
+        </div>
+        <textarea id="pg-output" readonly
+          style="flex:1;min-height:500px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--mono);font-size:11px;line-height:1.6;padding:14px;resize:vertical;outline:none;"
+          placeholder="Fill in the fields and click Generate Prompt..."></textarea>
+        <div style="margin-top:12px;font-size:12px;color:var(--muted)">
+          Paste this into <strong style="color:var(--text)">Claude.ai</strong> or <strong style="color:var(--text)">ChatGPT</strong> for panel suggestions.
+          Then come back and build your panel here.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 </div><!-- end #app -->
 
 <!-- ADD ANTIBODY MODAL -->
@@ -1290,6 +1399,7 @@ function showView(name) {
   if (name === 'experiment') { loadSavedExperimentsList(); loadTissues(); }
   if (name === 'dilutions')  loadDilutionDB();
   if (name === 'similarity') renderSimilarityMatrix();
+  if (name === 'prompt')     initPromptGenerator();
   if (name === 'database')   {
     dbFiltered = [...allAntibodies];
     filterDB();
@@ -2423,6 +2533,184 @@ function showSimTooltip(e, dye1, dye2, val) {
 function hideSimTooltip() {
   const tt = document.getElementById('sim-tooltip');
   if (tt) tt.style.display = 'none';
+}
+
+// ════════════════════════════════════════════════════════
+// AI PROMPT GENERATOR
+// ════════════════════════════════════════════════════════
+function initPromptGenerator() {
+  // nothing to load — uses existing allAntibodies
+}
+
+function generatePrompt() {
+  const goal         = document.getElementById('pg-goal').value.trim();
+  const maxSize      = document.getElementById('pg-maxsize').value || '12';
+  const instrument   = document.getElementById('pg-instrument').value;
+  const markersStock = document.getElementById('pg-markers-stock').value.trim();
+  const markersOrder = document.getElementById('pg-markers-order').value.trim();
+  const avoid        = document.getElementById('pg-avoid').value.trim();
+  const ordering     = document.getElementById('pg-ordering').value;
+  const numOptions   = document.getElementById('pg-options').value;
+  const extra        = document.getElementById('pg-extra').value.trim();
+
+  if (!goal) { toast('Please describe your experiment goal first', 'error'); return; }
+
+  // ── Parse requested markers from stock ─────────────────
+  const requestedRaw = markersStock.split(/[,\n]+/).map(s => s.trim()).filter(Boolean);
+
+  // ── Build inventory section ─────────────────────────────
+  // Group antibodies by marker name (fuzzy match to requested if provided)
+  const markerGroups = {};
+  allAntibodies.forEach(ab => {
+    if (!ab.marker) return;
+    const key = ab.marker.trim();
+    if (!markerGroups[key]) markerGroups[key] = [];
+    markerGroups[key].push(ab);
+  });
+
+  // If markers requested, filter to relevant ones + show full list separately
+  let relevantMarkers = [];
+  let matchedKeys = new Set();
+
+  if (requestedRaw.length) {
+    requestedRaw.forEach(req => {
+      const reqLower = req.toLowerCase().replace(/[^a-z0-9]/g,'');
+      Object.keys(markerGroups).forEach(key => {
+        const keyLower = key.toLowerCase().replace(/[^a-z0-9]/g,'');
+        // Match if key contains request or vice versa (handles CD8 -> CD8a etc)
+        if (keyLower.includes(reqLower) || reqLower.includes(keyLower) ||
+            keyLower.startsWith(reqLower) || reqLower.startsWith(keyLower)) {
+          matchedKeys.add(key);
+        }
+      });
+    });
+  }
+
+  // Build inventory text — matched markers first, then full list summarized
+  let inventoryText = '';
+
+  if (matchedKeys.size > 0) {
+    inventoryText += 'REQUESTED MARKERS AVAILABLE IN STOCK:\n';
+    inventoryText += '(Format: Marker | Fluorochrome | Code | Brightness)\n\n';
+    [...matchedKeys].sort().forEach(key => {
+      markerGroups[key].forEach(ab => {
+        const fi = getFluorInfo(ab.fluorochrome);
+        const bri = fi ? fi.brightness : '?';
+        inventoryText += `  ${ab.marker} | ${ab.fluorochrome} | ${ab.code || '—'} | ${bri}\n`;
+      });
+    });
+    inventoryText += '\n';
+  }
+
+  // Full inventory summary grouped by marker
+  inventoryText += 'FULL ANTIBODY INVENTORY (all available stock):\n';
+  inventoryText += '(Format: Marker | Fluorochrome options [Code, Brightness])\n\n';
+  Object.keys(markerGroups).sort().forEach(key => {
+    const options = markerGroups[key].map(ab => {
+      const fi = getFluorInfo(ab.fluorochrome);
+      const bri = fi ? fi.brightness : '?';
+      return `${ab.fluorochrome} [${ab.code||'?'}, ${bri}]`;
+    }).join(' / ');
+    inventoryText += `  ${key}: ${options}\n`;
+  });
+
+  // ── High-similarity pairs warning ──────────────────────
+  const HIGH_SIM = 0.5;
+  const simPairs = [];
+  for (let i = 0; i < SIMILARITY_DYES.length; i++) {
+    for (let j = i+1; j < SIMILARITY_DYES.length; j++) {
+      if (SIMILARITY_MATRIX[i][j] >= HIGH_SIM) {
+        simPairs.push(`${SIMILARITY_DYES[i]} & ${SIMILARITY_DYES[j]}: ${SIMILARITY_MATRIX[i][j].toFixed(2)}`);
+      }
+    }
+  }
+
+  // ── Instrument-specific notes ───────────────────────────
+  const instrumentNote = instrument === 'aurora'
+    ? 'Cytek Aurora (5-laser spectral flow cytometer: 355nm UV, 405nm Violet, 488nm Blue, 561nm Yellow-Green, 638nm Red; 64 fluorescence channels; full spectrum unmixing — spillover is handled mathematically so similar spectra can be used IF markers are on mutually exclusive populations)'
+    : 'BD Symphony A5 (conventional flow cytometer with UV/Violet/Blue/Yellow-Green/Red lasers; uses compensation — spectrally similar dyes should be avoided even on exclusive populations)';
+
+  // ── Ordering context ─────────────────────────────────────
+  const orderingNote = {
+    'both':  'Please provide options both using only existing stock AND options that include 1-2 suggested antibody purchases to improve the panel.',
+    'stock': 'Please use ONLY antibodies from the existing stock inventory listed above. Do not suggest purchasing new antibodies.',
+    'order': 'Suggest the best possible panel regardless of current stock. Indicate which antibodies would need to be ordered.'
+  }[ordering];
+
+  // ── Markers to order ─────────────────────────────────────
+  const orderMarkersNote = markersOrder
+    ? `\nMARKERS REQUESTED THAT MAY NEED ORDERING (no specific fluorochrome in stock):\n${markersOrder.split(/[,\n]+/).map(s=>'  - '+s.trim()).filter(Boolean).join('\n')}\n  → Suggest appropriate fluorochrome(s) to order for each.`
+    : '';
+
+  // ── Build the full prompt ────────────────────────────────
+  const prompt = `You are an expert flow cytometry panel designer with deep knowledge of antibody-fluorochrome combinations, spectral overlap, and panel optimization.
+
+INSTRUMENT: ${instrumentNote}
+
+EXPERIMENT GOAL:
+${goal}
+
+PANEL REQUIREMENTS:
+- Maximum panel size: ${maxSize} markers
+- Species: Mouse
+${avoid ? `- Markers to AVOID or exclude: ${avoid}` : ''}
+${extra ? `- Additional requirements: ${extra}` : ''}
+
+${orderMarkersNote}
+
+ORDERING POLICY:
+${orderingNote}
+
+${inventoryText}
+
+SPECTRAL SIMILARITY WARNINGS (similarity index ≥ 0.5 — problematic unless markers are mutually exclusive):
+${simPairs.length ? simPairs.map(p => '  ⚠ ' + p).join('\n') : '  None above threshold'}
+
+PANEL DESIGN RULES TO FOLLOW:
+1. BRIGHTNESS MATCHING: Dim fluorochromes (Medium/Dim) should be placed on highly expressed antigens (abundant on most cells of interest). Bright fluorochromes can go on rare or dimly expressed markers.
+2. RARE POPULATIONS: Markers defining rare populations (e.g. Tregs, DCs, memory cells) need bright fluorochromes even if the antigen itself is highly expressed on those cells.
+3. SPECTRAL SIMILARITY: Fluorochrome pairs with similarity index ≥ 0.5 should only be combined if those markers are NOT co-expressed on the same cells. Always explain your reasoning.
+4. TANDEM DYES: Flag when tandem dyes are used (PE-Cy7, APC-Cy7, BV605, BV650, BV711, BV785, BUV563, BUV615 etc.) — they are prone to lot-to-lot variation and degradation.
+5. MARKER NAME FLEXIBILITY: CD8 includes CD8a/CD8A/CD8α. CD4 covers all CD4 clones. Match requested markers flexibly to available stock.
+6. DUMP CHANNEL: Consider suggesting a dump channel strategy (lineage exclusion) if appropriate for the experiment.
+7. LIVE/DEAD: Always include a live/dead discrimination marker. Suggest an appropriate one (Zombie dyes, DAPI, 7-AAD etc.) based on whether samples will be fixed.
+8. AUTOFLUORESCENCE: UV and violet channels can have high tissue autofluorescence — note this for tumor samples especially.
+
+REQUESTED OUTPUT FORMAT:
+Please provide ${numOptions} panel options. For each option:
+
+**Option [N]: [Brief descriptive title]**
+| Marker | Fluorochrome | Code | Laser | Brightness | Reasoning |
+|--------|-------------|------|-------|------------|-----------|
+[table rows]
+
+**Summary:**
+- Key design decisions: [brief explanation]
+- Similarity pairs used (if any): [which pairs and why it's acceptable]
+- Tandem dyes included: [list and note about lot variation]
+- Suggested live/dead: [recommendation]
+- If ordering needed: [what to order and why]
+- Limitations of this panel: [honest assessment]
+
+After all options, provide a brief comparison: which option you recommend and why.`;
+
+  document.getElementById('pg-output').value = prompt;
+  toast('Prompt generated! Copy and paste into Claude or ChatGPT', 'success');
+}
+
+function copyPrompt() {
+  const el = document.getElementById('pg-output');
+  if (!el.value) { toast('Generate a prompt first', 'error'); return; }
+  navigator.clipboard.writeText(el.value).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => btn.textContent = '📋 Copy', 2000);
+    toast('Prompt copied to clipboard!', 'success');
+  }).catch(() => {
+    el.select();
+    document.execCommand('copy');
+    toast('Copied!', 'success');
+  });
 }
 // ── We need a users table ─────────────────
 // START
