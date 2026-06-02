@@ -467,7 +467,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v36</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v37</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -3236,10 +3236,11 @@ async function saveExperiment() {
     panel_name:      experimentPanel.name,
     user_name:       userName,
     samples:         parseInt(document.getElementById('exp-samples').value)||0,
-    mix_type:        document.getElementById('exp-mix-type').value,
-    volume_per_tube: parseInt(document.getElementById('exp-volume').value)||50,
+    mix_type:        document.getElementById('exp-mix-surface').value,
+    volume_per_tube: parseInt(document.getElementById('exp-volume-surface').value)||50,
     margin_type:     document.getElementById('exp-margin-type').value,
     margin_value:    parseFloat(document.getElementById('exp-margin-value').value)||0,
+    notes:           (document.getElementById('exp-volume-ic').value + 'µL IC ' + document.getElementById('exp-mix-ic').value),
   }).select().single();
 
   if (error) { toast('Error: '+error.message, 'error'); return; }
@@ -3297,11 +3298,11 @@ async function loadExperiment(expId) {
   experimentFMOs = new Set(rows.filter(r => r.is_fmo).map(r => r.marker));
 
   document.getElementById('exp-panel-name').textContent = 'Panel: ' + exp.panel_name;
-  document.getElementById('exp-samples').value      = exp.samples||5;
-  document.getElementById('exp-mix-type').value     = exp.mix_type||'1x';
-  document.getElementById('exp-volume').value       = exp.volume_per_tube||50;
-  document.getElementById('exp-margin-type').value  = exp.margin_type||'ul';
-  document.getElementById('exp-margin-value').value = exp.margin_value||10;
+  document.getElementById('exp-samples').value         = exp.samples||5;
+  document.getElementById('exp-mix-surface').value     = exp.mix_type||'1x';
+  document.getElementById('exp-volume-surface').value  = exp.volume_per_tube||50;
+  document.getElementById('exp-margin-type').value     = exp.margin_type||'ul';
+  document.getElementById('exp-margin-value').value    = exp.margin_value||10;
 
   renderFMOSelector();
   recalcScheme();
@@ -3361,19 +3362,24 @@ function printExperiment() {
 // ── EXCEL EXPORT ──────────────────────────────────────────
 function exportExperimentExcel() {
   if (!experimentPanel) { toast('No panel loaded', 'error'); return; }
-  const { totalVol } = calcTubeCount();
+  const { totalVolSurface, totalVolIC } = calcTubeCount();
   const samples = document.getElementById('exp-samples').value;
-  const vol     = document.getElementById('exp-volume').value;
-  const mix     = document.getElementById('exp-mix-type').value;
+  const volSurf = document.getElementById('exp-volume-surface').value;
+  const mixSurf = document.getElementById('exp-mix-surface').value;
+  const volIC   = document.getElementById('exp-volume-ic').value;
+  const mixICV  = document.getElementById('exp-mix-ic').value;
 
   let csv = `Panel,${experimentPanel.name}\n`;
-  csv += `Samples,${samples}\nVolume per tube,${vol} µL\nMastermix,${mix}\nTotal volume,${totalVol} µL\n\n`;
+  csv += `Samples,${samples}\nSurface volume,${volSurf} µL (${mixSurf})\nIC volume,${volIC} µL (${mixICV})\n\n`;
   csv += 'Type,Marker,Code,Fluorochrome,Dilution,µL antibody,µL buffer,Total µL\n';
 
   experimentPanel.rows.forEach(r => {
-    const calc = calcAntibodyVol(r.dilution, totalVol);
-    const type = r.staining_type === 'intracellular' ? 'IC' : 'Surface';
-    csv += `${type},${r.marker},${r.code||''},${r.fluorochrome||''},${r.dilution||''},${calc?calc.abVol:''},${calc?calc.bufVol:''},${calc?totalVol:''}\n`;
+    const isIC   = r.staining_type === 'intracellular';
+    const tVol   = isIC ? totalVolIC : totalVolSurface;
+    const abVol  = calcAntibodyUl(r.dilution, tVol) || '';
+    const bufVol = abVol ? Math.round((tVol - abVol)*100)/100 : '';
+    const type   = isIC ? 'IC' : 'Surface';
+    csv += `${type},${r.marker},${r.code||''},${r.fluorochrome||''},${r.dilution||''},${abVol},${bufVol},${tVol}\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv' });
