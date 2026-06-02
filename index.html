@@ -467,7 +467,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v35</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v36</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -819,17 +819,6 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
         <input type="number" class="form-input" id="exp-samples" value="5" min="1" oninput="recalcScheme()">
       </div>
       <div class="form-group" style="margin:0">
-        <label class="form-label">Mastermix</label>
-        <select class="form-input" id="exp-mix-type" onchange="recalcScheme()">
-          <option value="1x">1x</option>
-          <option value="2x">2x</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">Volume / tube (µL)</label>
-        <input type="number" class="form-input" id="exp-volume" value="50" min="1" oninput="recalcScheme()">
-      </div>
-      <div class="form-group" style="margin:0">
         <label class="form-label">Margin</label>
         <div style="display:flex;gap:6px;">
           <select class="form-input" id="exp-margin-type" style="width:65px" onchange="recalcScheme()">
@@ -862,6 +851,42 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
       <div class="form-group" style="margin:0">
         <label class="form-label">Total tubes</label>
         <div id="exp-tube-count" style="font-size:22px;font-weight:700;color:var(--accent);padding:6px 0;">—</div>
+      </div>
+    </div>
+
+    <!-- Surface and IC settings side by side -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--muted);margin-bottom:10px;">Surface staining mix</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Volume / tube (µL)</label>
+            <input type="number" class="form-input" id="exp-volume-surface" value="50" min="1" oninput="recalcScheme()">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Mix type</label>
+            <select class="form-input" id="exp-mix-surface" onchange="recalcScheme()">
+              <option value="1x">1x</option>
+              <option value="2x">2x</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--violet);margin-bottom:10px;">Intracellular staining mix</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Volume / tube (µL)</label>
+            <input type="number" class="form-input" id="exp-volume-ic" value="50" min="1" oninput="recalcScheme()">
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label">Mix type</label>
+            <select class="form-input" id="exp-mix-ic" onchange="recalcScheme()">
+              <option value="1x">1x</option>
+              <option value="2x">2x</option>
+            </select>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -2829,24 +2854,39 @@ function calcTubeCount() {
   const fmos       = experimentFMOs.size;
   const marginType = document.getElementById('exp-margin-type')?.value || 'ul';
   const marginVal  = parseFloat(document.getElementById('exp-margin-value')?.value) || 0;
-  const vol        = parseFloat(document.getElementById('exp-volume')?.value) || 50;
-  const mixType    = document.getElementById('exp-mix-type')?.value || '1x';
-  let tubes    = samples + fmos;
-  let totalVol = tubes * vol * (mixType === '2x' ? 2 : 1);
-  if (marginType === 'ul')  totalVol += marginVal;
-  if (marginType === 'pct') totalVol *= (1 + marginVal/100);
-  return { tubes, totalVol: Math.ceil(totalVol) };
+
+  // Surface
+  const volSurface = parseFloat(document.getElementById('exp-volume-surface')?.value) || 50;
+  const mixSurface = document.getElementById('exp-mix-surface')?.value || '1x';
+  // IC
+  const volIC      = parseFloat(document.getElementById('exp-volume-ic')?.value) || 50;
+  const mixIC      = document.getElementById('exp-mix-ic')?.value || '1x';
+
+  const tubes = samples + fmos;
+
+  function applyMargin(vol) {
+    if (marginType === 'ul')  return vol + marginVal;
+    if (marginType === 'pct') return vol * (1 + marginVal/100);
+    return vol;
+  }
+
+  const totalVolSurface = Math.ceil(applyMargin(tubes * volSurface * (mixSurface === '2x' ? 2 : 1)));
+  const totalVolIC      = Math.ceil(applyMargin(tubes * volIC      * (mixIC      === '2x' ? 2 : 1)));
+
+  return { tubes, totalVolSurface, totalVolIC };
 }
 
-function calcAntibodyVol(dilution, totalVol) {
-  if (!dilution) return null;
+// Calculate µL of ONE antibody needed given dilution and total mastermix volume
+function calcAntibodyUl(dilution, totalVol) {
+  if (!dilution || !totalVol) return null;
   const parts = dilution.toString().split(':');
   if (parts.length !== 2) return null;
   const ratio = parseFloat(parts[1]);
   if (!ratio) return null;
-  const abVol = totalVol / ratio;
-  return { abVol: Math.round(abVol*100)/100, bufVol: Math.round((totalVol-abVol)*100)/100 };
+  return Math.round((totalVol / ratio) * 100) / 100;
 }
+
+// calcAntibodyVol replaced by calcAntibodyUl
 
 const LASER_ORDER  = {355:0, 405:1, 488:2, 561:3, 638:4};
 const LASER_LABELS = {355:'355 nm — UV', 405:'405 nm — Violet', 488:'488 nm — Blue', 561:'561 nm — Green', 638:'638 nm — Red'};
@@ -2855,8 +2895,9 @@ const LASER_TEXT   = {355:'var(--uv)', 405:'var(--violet)', 488:'var(--blue)', 5
 
 function recalcScheme() {
   if (!experimentPanel) return;
-  const { tubes, totalVol } = calcTubeCount();
-  document.getElementById('exp-tube-count').textContent = tubes + ' tubes · ' + totalVol + ' µL total';
+  const { tubes, totalVolSurface, totalVolIC } = calcTubeCount();
+  document.getElementById('exp-tube-count').textContent =
+    tubes + ' tubes · surface: ' + totalVolSurface + ' µL · IC: ' + totalVolIC + ' µL';
 
   // Sort rows
   const sorted = [...experimentPanel.rows].sort((a,b) => {
@@ -2872,65 +2913,76 @@ function recalcScheme() {
   const icRows      = sorted.filter(r => r.staining_type==='intracellular');
   const liveDead    = experimentPanel.liveDead || null;
 
-  function renderSection(rows, title, titleColor) {
+  // renderSection: totalVol = total mastermix volume for this section
+  // Each antibody contributes its own small volume; buffer = totalVol - sum(all ab vols)
+  function renderSection(rows, title, titleColor, totalVol) {
     if (!rows.length) return '';
+
+    // Pre-calculate all antibody volumes
+    const abVols = rows.map(r => calcAntibodyUl(r.dilution, totalVol) || 0);
+    const totalAbVol  = Math.round(abVols.reduce((s,v) => s+v, 0) * 100) / 100;
+    const totalBufVol = Math.round((totalVol - totalAbVol) * 100) / 100;
+
     // Group by laser
     const groups = {};
-    rows.forEach(r => { const k=r.laser||'?'; if(!groups[k]) groups[k]=[]; groups[k].push(r); });
+    rows.forEach((r,i) => {
+      const k = r.laser||'?';
+      if (!groups[k]) groups[k] = [];
+      groups[k].push({ ...r, _abVol: abVols[i] });
+    });
     const laserKeys = Object.keys(groups).sort((a,b)=>(LASER_ORDER[a]??9)-(LASER_ORDER[b]??9));
 
-    let html = `<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${titleColor};margin-bottom:10px;">${title}</div>`;
+    let html = `<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${titleColor};margin-bottom:10px;">${title} <span style="font-weight:400;font-size:11px;color:var(--muted)">(total mix: ${totalVol} µL per tube)</span></div>`;
     html += `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:0;overflow-x:auto;-webkit-overflow-scrolling:touch;">`;
-    html += `<table class="db-table"><thead><tr><th>Marker</th><th>Code</th><th>Fluorochrome</th><th>Dilution</th><th>µL antibody</th><th></th></tr></thead><tbody>`;
+    html += `<table class="db-table"><thead><tr>
+      <th>Marker</th><th>Code</th><th>Fluorochrome</th>
+      <th>Dilution</th><th>µL antibody</th><th></th>
+    </tr></thead><tbody>`;
 
     laserKeys.forEach(laser => {
       const lRows  = groups[laser];
       const lLabel = LASER_LABELS[laser]||laser+' nm';
       const lBg    = LASER_BG[laser]||'transparent';
       const lText  = LASER_TEXT[laser]||'var(--muted)';
-
       html += `<tr><td colspan="6" style="padding:5px 12px;background:${lBg};font-size:11px;font-weight:700;color:${lText};text-transform:uppercase;letter-spacing:0.4px;">${lLabel}</td></tr>`;
 
       lRows.forEach(r => {
         const isFMO = experimentFMOs.has(r.marker);
-        const calc  = calcAntibodyVol(r.dilution, totalVol);
+        const abVol = r._abVol;
         html += `<tr>
-          <td><strong>${r.marker}</strong>${isFMO?'<span style="font-size:10px;background:var(--green);color:#fff;padding:1px 5px;border-radius:3px;margin-left:6px">FMO</span>':''}</td>
+          <td><strong>${r.marker}</strong>${isFMO ? '<span style="font-size:10px;background:var(--green);color:#fff;padding:1px 5px;border-radius:3px;margin-left:6px">FMO</span>' : ''}</td>
           <td style="font-family:var(--mono);font-size:11px;color:var(--accent)">${r.code||''}</td>
           <td>${r.fluorochrome||''}</td>
           <td><input type="text" class="dilution-input" style="width:75px" placeholder="1:200"
             value="${r.dilution||''}"
             onchange="updateExpDilution('${r.marker}','${r.staining_type||'surface'}',this.value)"></td>
-          <td style="font-weight:600;color:${calc?'var(--accent)':'var(--muted)'}">${calc?calc.abVol+' µL':'—'}</td>
+          <td style="font-weight:600;color:${abVol?'var(--accent)':'var(--muted)'}">${abVol ? abVol+' µL' : '—'}</td>
           <td><button class="btn-icon" style="font-size:10px;padding:2px 5px"
             onclick="showDilutionLog('${r.code}','${r.marker}','${r.fluorochrome}')">📊</button></td>
         </tr>`;
       });
-
-      // no per-laser subtotal — section total shown below
     });
 
-    // Section totals
-    const secAbTot  = rows.reduce((s,r)=>{ const c=calcAntibodyVol(r.dilution,totalVol); return s+(c?c.abVol:0); },0);
-    const secBufTot = rows.reduce((s,r)=>{ const c=calcAntibodyVol(r.dilution,totalVol); return s+(c?c.bufVol:0); },0);
-    const secTotal  = Math.round((secAbTot+secBufTot)*100)/100;
     html += '</tbody></table></div>';
-    if (secAbTot > 0) {
-      html += `<div style="margin:-16px 0 20px;padding:12px 20px;background:var(--surface2);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius-lg) var(--radius-lg);font-size:13px;">
-        <div style="display:flex;gap:32px;align-items:baseline;">
+
+    // Section totals box
+    if (totalAbVol > 0) {
+      html += `<div style="margin:-16px 0 20px;padding:14px 20px;background:var(--surface2);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--radius-lg) var(--radius-lg);">
+        <div style="display:flex;gap:28px;align-items:baseline;flex-wrap:wrap;">
           <div>
-            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--muted);margin-bottom:2px">Total volume</div>
-            <div style="font-size:18px;font-weight:700;color:var(--text)">${secTotal} µL</div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--muted);margin-bottom:2px">Total mix volume</div>
+            <div style="font-size:20px;font-weight:700;color:var(--text)">${totalVol} µL</div>
           </div>
-          <div style="color:var(--muted)">
-            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px">Antibodies</div>
-            <div style="font-size:15px;font-weight:600;color:var(--accent)">+ ${Math.round(secAbTot*100)/100} µL</div>
+          <div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--muted);margin-bottom:2px">All antibodies combined</div>
+            <div style="font-size:16px;font-weight:600;color:var(--accent)">${totalAbVol} µL</div>
           </div>
-          <div style="color:var(--muted)">
-            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px">Buffer</div>
-            <div style="font-size:15px;font-weight:600;color:var(--blue)">+ ${Math.round(secBufTot*100)/100} µL</div>
+          <div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.4px;color:var(--muted);margin-bottom:2px">Buffer to add</div>
+            <div style="font-size:16px;font-weight:600;color:var(--blue)">${totalBufVol > 0 ? totalBufVol : '—'} µL</div>
           </div>
         </div>
+        ${totalBufVol < 0 ? '<div style="color:var(--red);font-size:12px;margin-top:8px">⚠ Antibody volumes exceed total — check dilutions</div>' : ''}
       </div>`;
     }
     return html;
@@ -2939,7 +2991,8 @@ function recalcScheme() {
   // Live/Dead
   let ldHtml = '';
   if (liveDead) {
-    const calc = calcAntibodyVol(liveDead.dilution, totalVol);
+    const ldAbVol = calcAntibodyUl(liveDead.dilution, totalVolSurface);
+    const ldBufVol = ldAbVol ? Math.round((totalVolSurface - ldAbVol)*100)/100 : null;
     ldHtml = `<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--green);margin-bottom:10px;">☠️ Live/Dead Stain</div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:20px;">
     <table class="db-table"><thead><tr><th>Marker</th><th>Fluorochrome</th><th>Laser</th><th>Dilution</th><th>µL antibody</th><th>µL buffer</th></tr></thead>
@@ -2948,14 +3001,14 @@ function recalcScheme() {
       <td>${liveDead.laser?' '+liveDead.laser+' nm':''}</td>
       <td><input type="text" class="dilution-input" style="width:75px" placeholder="1:500"
         value="${liveDead.dilution||''}" onchange="experimentPanel.liveDead.dilution=this.value;recalcScheme()"></td>
-      <td style="font-weight:600;color:var(--accent)">${calc?calc.abVol+' µL':'—'}</td>
-      <td style="color:var(--muted)">${calc?calc.bufVol+' µL':'—'}</td>
+      <td style="font-weight:600;color:var(--accent)">${ldAbVol ? ldAbVol+' µL' : '—'}</td>
+      <td style="color:var(--muted)">${ldBufVol ? ldBufVol+' µL' : '—'}</td>
     </tr></tbody></table></div>`;
   }
 
   document.getElementById('exp-scheme-container').innerHTML = ldHtml
-    + renderSection(surfaceRows,'Surface Staining','var(--muted)')
-    + renderSection(icRows,'Intracellular Staining','var(--violet)');
+    + renderSection(surfaceRows,'Surface Staining','var(--muted)', totalVolSurface)
+    + renderSection(icRows,'Intracellular Staining','var(--violet)', totalVolIC);
 
   renderFMOGrid(surfaceRows);
 }
@@ -3261,13 +3314,16 @@ function printExperiment() {
   const { totalVol } = calcTubeCount();
 
   const makeTable = (rows) => rows.map(r => {
-    const calc = calcAntibodyVol(r.dilution, totalVol);
+    const isIC  = r.staining_type === 'intracellular';
+    const tVol  = isIC ? totalVolIC : totalVolSurface;
+    const abVol = calcAntibodyUl(r.dilution, tVol);
+    const bufVol = abVol ? Math.round((tVol - abVol)*100)/100 : null;
     return `<tr>
       <td>${r.marker}</td><td>${r.code||''}</td><td>${r.fluorochrome||''}</td>
       <td>${r.dilution||'—'}</td>
-      <td>${calc ? calc.abVol+' µL' : '—'}</td>
-      <td>${calc ? calc.bufVol+' µL' : '—'}</td>
-      <td>${calc ? totalVol+' µL' : '—'}</td>
+      <td>${abVol ? abVol+' µL' : '—'}</td>
+      <td>${bufVol ? bufVol+' µL' : '—'}</td>
+      <td>${tVol} µL</td>
     </tr>`;
   }).join('');
 
@@ -3289,7 +3345,7 @@ function printExperiment() {
   </style></head><body>
   <h1>${experimentPanel.name}</h1>
   <div class="meta">
-    ${samples} samples · ${vol} µL/tube · ${mix} mastermix · Total: ${totalVol} µL per antibody
+    ${samples} samples · Surface: ${document.getElementById('exp-volume-surface').value} µL/tube ${document.getElementById('exp-mix-surface').value} · IC: ${document.getElementById('exp-volume-ic').value} µL/tube ${document.getElementById('exp-mix-ic').value}
   </div>
   ${surface.length ? `<h2>Surface Staining</h2>
     <table><thead><tr><th>Marker</th><th>Code</th><th>Fluorochrome</th><th>Dilution</th><th>µL antibody</th><th>µL buffer</th><th>Total</th></tr></thead>
