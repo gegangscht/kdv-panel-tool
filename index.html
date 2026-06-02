@@ -467,7 +467,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v37</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v38</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -3369,18 +3369,42 @@ function exportExperimentExcel() {
   const volIC   = document.getElementById('exp-volume-ic').value;
   const mixICV  = document.getElementById('exp-mix-ic').value;
 
-  let csv = `Panel,${experimentPanel.name}\n`;
-  csv += `Samples,${samples}\nSurface volume,${volSurf} µL (${mixSurf})\nIC volume,${volIC} µL (${mixICV})\n\n`;
-  csv += 'Type,Marker,Code,Fluorochrome,Dilution,µL antibody,µL buffer,Total µL\n';
+  const surfaceRows = experimentPanel.rows.filter(r => (r.staining_type||'surface') === 'surface');
+  const icRows      = experimentPanel.rows.filter(r => r.staining_type === 'intracellular');
 
-  experimentPanel.rows.forEach(r => {
-    const isIC   = r.staining_type === 'intracellular';
-    const tVol   = isIC ? totalVolIC : totalVolSurface;
-    const abVol  = calcAntibodyUl(r.dilution, tVol) || '';
-    const bufVol = abVol ? Math.round((tVol - abVol)*100)/100 : '';
-    const type   = isIC ? 'IC' : 'Surface';
-    csv += `${type},${r.marker},${r.code||''},${r.fluorochrome||''},${r.dilution||''},${abVol},${bufVol},${tVol}\n`;
-  });
+  function sectionCSV(rows, label, totalVol) {
+    if (!rows.length) return '';
+    const totalAbVol  = Math.round(rows.reduce((s,r) => s + (calcAntibodyUl(r.dilution, totalVol)||0), 0)*100)/100;
+    const totalBufVol = Math.round((totalVol - totalAbVol)*100)/100;
+
+    let s = `${label},,,,\n`;
+    s += `Total mix volume,${totalVol} µL,,\n`;
+    s += `Mix type,${label === 'Surface' ? mixSurf : mixICV},,\n`;
+    s += `,,,,\n`;
+    s += `Marker,Code,Fluorochrome,Dilution,µL antibody\n`;
+    rows.forEach(r => {
+      const abVol = calcAntibodyUl(r.dilution, totalVol) || '';
+      s += `${r.marker},${r.code||''},${r.fluorochrome||''},${r.dilution||''},${abVol}\n`;
+    });
+    s += `,,,,\n`;
+    s += `Total antibodies,,,,${totalAbVol} µL\n`;
+    s += `Buffer to add,,,,${totalBufVol > 0 ? totalBufVol : '!'} µL\n`;
+    s += `\n`;
+    return s;
+  }
+
+  let csv = `Panel,${experimentPanel.name}\n`;
+  csv += `Samples,${samples}\n\n`;
+  csv += sectionCSV(surfaceRows, 'Surface', totalVolSurface);
+  csv += sectionCSV(icRows, 'Intracellular', totalVolIC);
+
+  // Live/dead
+  if (experimentPanel.liveDead) {
+    const ld = experimentPanel.liveDead;
+    const abVol = calcAntibodyUl(ld.dilution, totalVolSurface) || '';
+    csv += `Live/Dead,,,,\n`;
+    csv += `${ld.name},LIVE/DEAD,${ld.fluorochrome||''},${ld.dilution||''},${abVol}\n\n`;
+  }
 
   const blob = new Blob([csv], { type: 'text/csv' });
   const url  = URL.createObjectURL(blob);
