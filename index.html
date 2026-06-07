@@ -467,7 +467,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v40</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v41</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -706,6 +706,11 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
       <select id="panels-user-filter" class="search-input" style="width:160px" onchange="loadSavedPanels()">
         <option value="">All users</option>
       </select>
+      <select id="panels-species-filter" class="search-input" style="width:130px" onchange="loadSavedPanels()">
+        <option value="">All species</option>
+        <option value="mouse">🐭 Mouse</option>
+        <option value="human">🧑 Human</option>
+      </select>
       <select id="panels-sort" class="search-input" style="width:140px" onchange="loadSavedPanels()">
         <option value="created_at">Newest first</option>
         <option value="name">By name</option>
@@ -828,26 +833,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
           <input type="number" class="form-input" id="exp-margin-value" value="10" min="0" oninput="recalcScheme()" style="width:65px">
         </div>
       </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">Tissue</label>
-        <select class="form-input" id="exp-tissue" onchange="recalcScheme()">
-          <option value="">Select...</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">Protocol</label>
-        <select class="form-input" id="exp-protocol">
-          <option value="fresh">Fresh</option>
-          <option value="fixed">Fixed</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin:0">
-        <label class="form-label">Duration</label>
-        <select class="form-input" id="exp-duration">
-          <option value="30min">30 min</option>
-          <option value="overnight">Overnight</option>
-        </select>
-      </div>
+      <!-- tissue/protocol/duration removed — set when building panel -->
       <div class="form-group" style="margin:0">
         <label class="form-label">Total tubes</label>
         <div id="exp-tube-count" style="font-size:22px;font-weight:700;color:var(--accent);padding:6px 0;">—</div>
@@ -872,7 +858,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
           </div>
         </div>
       </div>
-      <div>
+      <div id="exp-ic-settings">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;color:var(--violet);margin-bottom:10px;">Intracellular staining mix</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
           <div class="form-group" style="margin:0">
@@ -1421,7 +1407,7 @@ function showView(name) {
   if (name === 'saved')      loadSavedPanels();
   if (name === 'signout')    { loadSignoutLog(); loadOrderHistory(); }
   if (name === 'landing')    loadActivity();
-  if (name === 'experiment') { loadSavedExperimentsList(); loadTissues(); }
+  if (name === 'experiment') { loadSavedExperimentsList(); }
   if (name === 'dilutions')  loadDilutionDB();
   if (name === 'similarity') renderSimilarityMatrix();
   if (name === 'prompt')     initPromptGenerator();
@@ -1452,16 +1438,17 @@ function searchByMarker() {
 }
 
 function _doMarkerSearch() {
-  const term  = document.getElementById('builder-search').value.trim().toLowerCase();
-  const color = document.getElementById('builder-color').value;
-  const el    = document.getElementById('search-results-marker');
+  const term    = document.getElementById('builder-search').value.trim().toLowerCase();
+  const color   = document.getElementById('builder-color').value;
+  const el      = document.getElementById('search-results-marker');
+  const species = currentSpecies || 'mouse';
 
   if (!term && !color) {
     el.innerHTML = '<div class="empty-state">Type a marker name to search</div>';
     return;
   }
 
-  let results = allAntibodies;
+  let results = allAntibodies.filter(a => (a.species||'mouse') === species);
   if (term)  results = results.filter(a => (a.marker||'').toLowerCase().includes(term) || (a.code||'').toLowerCase().includes(term));
   if (color) results = results.filter(a => a.box_color === color);
 
@@ -1538,7 +1525,8 @@ function _doFluorSearch() {
     return;
   }
 
-  let results = allAntibodies;
+  const speciesFluor = currentSpecies || 'mouse';
+  let results = allAntibodies.filter(a => (a.species||'mouse') === speciesFluor);
   if (term)  results = results.filter(a => (a.fluorochrome||'').toLowerCase().includes(term));
   if (color) results = results.filter(a => a.box_color === color);
 
@@ -1636,6 +1624,33 @@ function clearPanel() {
 }
 
 // ── SORT PANEL BY LASER ───────────────────────────────────
+// ── SPECIES TOGGLE ───────────────────────────────────────
+let currentSpecies = 'mouse';
+
+function setSpecies(sp) {
+  currentSpecies = sp;
+  const mBtn = document.getElementById('species-mouse');
+  const hBtn = document.getElementById('species-human');
+  if (mBtn && hBtn) {
+    mBtn.style.background = sp === 'mouse' ? 'var(--accent)' : 'transparent';
+    mBtn.style.color      = sp === 'mouse' ? '#fff' : 'var(--muted)';
+    hBtn.style.background = sp === 'human' ? 'var(--accent)' : 'transparent';
+    hBtn.style.color      = sp === 'human' ? '#fff' : 'var(--muted)';
+  }
+  // Clear search and re-run
+  const srchEl = document.getElementById('builder-search');
+  const flourEl = document.getElementById('fluor-search');
+  if (srchEl?.value || flourEl?.value) {
+    searchByMarker();
+    searchByFluor();
+  } else {
+    document.getElementById('search-results-marker').innerHTML =
+      '<div class="empty-state">Type a marker name to search</div>';
+    document.getElementById('search-results-fluor').innerHTML =
+      '<div class="empty-state">Type a fluorochrome or pick a laser color</div>';
+  }
+}
+
 function sortPanelByLaser() {
   if (!currentPanel.length) return;
   const laserOrder   = {355:0, 405:1, 488:2, 561:3, 638:4};
@@ -1843,12 +1858,12 @@ async function savePanel() {
     // Delete old rows and update timestamp
     await db.from('panel_rows').delete().eq('panel_id', existing.id);
     const pNotes2 = document.getElementById('panel-notes')?.value || '';
-    await db.from('panels').update({ updated_at: new Date().toISOString(), notes: pNotes2 }).eq('id', existing.id);
+    await db.from('panels').update({ updated_at: new Date().toISOString(), notes: pNotes2, species: currentSpecies || 'mouse' }).eq('id', existing.id);
     panelId = existing.id;
   } else {
     const pNotes = document.getElementById('panel-notes')?.value || '';
     const { data: panel, error } = await db.from('panels')
-      .insert({ name, user_name: userName, notes: pNotes }).select().single();
+      .insert({ name, user_name: userName, notes: pNotes, species: currentSpecies || 'mouse' }).select().single();
     if (error) { toast('Error: '+error.message, 'error'); return; }
     panelId = panel.id;
   }
@@ -1899,8 +1914,10 @@ async function loadSavedPanels() {
   const sortField   = document.getElementById('panels-sort')?.value || 'created_at';
   grid.innerHTML    = '<div class="page-loader"><span class="loader"></span></div>';
 
+  const speciesFilter = document.getElementById('panels-species-filter')?.value || '';
   let query = db.from('panels').select('*, panel_rows(*)');
-  if (userFilter) query = query.eq('user_name', userFilter);
+  if (userFilter)     query = query.eq('user_name', userFilter);
+  if (speciesFilter)  query = query.eq('species', speciesFilter);
   if (sortField === 'name') query = query.order('name');
   else query = query.order('created_at', { ascending: false });
 
@@ -1930,7 +1947,12 @@ async function loadSavedPanels() {
 
     return `<div class="saved-panel-card">
       <div class="sp-name">${p.name}</div>
-      <div class="sp-meta">${p.user_name} · ${date} · ${surface.length} surface${ic.length ? ' · '+ic.length+' IC' : ''}</div>
+      <div class="sp-meta">
+        <span style="background:${p.species==='human'?'#3b82f622':'#22c55e22'};color:${p.species==='human'?'var(--blue)':'var(--green)'};padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-right:6px;">
+          ${p.species==='human'?'🧑 Human':'🐭 Mouse'}
+        </span>
+        ${p.user_name} · ${date} · ${surface.length} surface${ic.length ? ' · '+ic.length+' IC' : ''}
+      </div>
       <div class="sp-markers">${chips}</div>
       <div class="sp-actions">
         <button class="btn-save" style="font-size:12px;padding:6px 14px" onclick="usePanelForExperiment('${p.id}','${p.name.replace(/'/g,"\'")}')">Use Panel →</button>
@@ -2824,11 +2846,16 @@ async function usePanelForExperiment(panelId, panelName) {
   experimentFMOs  = new Set();
 
   document.getElementById('exp-panel-name').textContent = 'Panel: ' + panelName;
+
+  // Show/hide IC settings based on whether panel has IC markers
+  const hasIC = enriched.some(r => r.staining_type === 'intracellular');
+  const icSettings = document.getElementById('exp-ic-settings');
+  if (icSettings) icSettings.style.display = hasIC ? 'block' : 'none';
+
   renderFMOSelector();
   recalcScheme();
   showView('experiment');
   loadSavedExperimentsList();
-  loadTissues();
 }
 
 function renderFMOSelector() {
@@ -3297,10 +3324,22 @@ async function loadExperiment(expId) {
   const { data: rows } = await db.from('experiment_rows').select('*').eq('experiment_id', expId).order('sort_order');
   if (!exp || !rows) { toast('Could not load experiment', 'error'); return; }
 
-  experimentPanel = { id: exp.panel_id, name: exp.panel_name, rows: rows.map(r => ({
-    marker: r.marker, code: r.code, fluorochrome: r.fluorochrome,
-    dilution: r.dilution, staining_type: r.staining_type
-  }))};
+  // Enrich rows with fluorochrome lookup (laser, emission etc.)
+  const enrichedExpRows = rows.map(r => {
+    const fi = getFluorInfo(r.fluorochrome);
+    return {
+      marker:        r.marker,
+      code:          r.code,
+      fluorochrome:  r.fluorochrome,
+      dilution:      r.dilution,
+      staining_type: r.staining_type,
+      laser:         fi?.excitation_laser  || '',
+      emission:      fi?.emission_peak     || '',
+      symphony:      fi?.symphony_detector || '',
+      aurora:        fi?.aurora_channel    || '',
+    };
+  });
+  experimentPanel = { id: exp.panel_id, name: exp.panel_name, rows: enrichedExpRows };
   experimentFMOs = new Set(rows.filter(r => r.is_fmo).map(r => r.marker));
 
   document.getElementById('exp-panel-name').textContent = 'Panel: ' + exp.panel_name;
@@ -3310,6 +3349,9 @@ async function loadExperiment(expId) {
   document.getElementById('exp-margin-type').value     = exp.margin_type||'ul';
   document.getElementById('exp-margin-value').value    = exp.margin_value||10;
 
+  const hasICLoaded = enrichedExpRows.some(r => r.staining_type === 'intracellular');
+  const icSett = document.getElementById('exp-ic-settings');
+  if (icSett) icSett.style.display = hasICLoaded ? 'block' : 'none';
   renderFMOSelector();
   recalcScheme();
   toast('Experiment loaded', 'success');
