@@ -467,7 +467,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v41</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v44</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -574,6 +574,19 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
                 <option value="Violet">Violet (405 nm)</option>
                 <option value="Ultra Violet">Ultra Violet (355 nm)</option>
               </select>
+            </div>
+            <div>
+              <div class="label-small">Species</div>
+              <div style="display:flex;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;">
+                <button id="species-mouse" onclick="setSpecies('mouse')"
+                  style="flex:1;padding:8px;border:none;font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;background:var(--accent);color:#fff;">
+                  🐭 Mouse
+                </button>
+                <button id="species-human" onclick="setSpecies('human')"
+                  style="flex:1;padding:8px;border:none;font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;background:var(--surface2);color:var(--muted);">
+                  🧑 Human
+                </button>
+              </div>
             </div>
           </div>
           <div class="result-list" id="search-results-marker">
@@ -726,6 +739,17 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   <div class="page-header">
     <div class="page-header-text"><h2>Antibody Database</h2><p id="db-count"></p></div>
     <div class="page-header-actions"><button class="btn-secondary" onclick="openAddAntibody()">+ Add Antibody</button></div>
+  </div>
+  <!-- Species toggle for database -->
+  <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px;width:fit-content;">
+    <button id="db-species-mouse" onclick="setDBSpecies('mouse')"
+      style="padding:8px 20px;border:none;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;background:var(--accent);color:#fff;">
+      🐭 Mouse Database
+    </button>
+    <button id="db-species-human" onclick="setDBSpecies('human')"
+      style="padding:8px 20px;border:none;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;background:var(--surface2);color:var(--muted);">
+      🧑 Human Database
+    </button>
   </div>
   <div class="db-toolbar">
     <input type="text" placeholder="Search marker, fluorochrome, code..." id="db-search" oninput="filterDB()">
@@ -1329,22 +1353,40 @@ async function init() {
 
 // ── DATA ──────────────────────────────────────────────────
 // ── DATABASE ──────────────────────────────────────────────
+let currentDBSpecies = 'mouse';
+
+function setDBSpecies(sp) {
+  currentDBSpecies = sp;
+  const mBtn = document.getElementById('db-species-mouse');
+  const hBtn = document.getElementById('db-species-human');
+  if (mBtn) { mBtn.style.background = sp==='mouse' ? 'var(--accent)' : 'var(--surface2)'; mBtn.style.color = sp==='mouse' ? '#fff' : 'var(--muted)'; }
+  if (hBtn) { hBtn.style.background = sp==='human' ? 'var(--accent)' : 'var(--surface2)'; hBtn.style.color = sp==='human' ? '#fff' : 'var(--muted)'; }
+  document.getElementById('db-search').value = '';
+  document.getElementById('db-color-filter').value = '';
+  filterDB();
+}
+
 function filterDB() {
   const term  = document.getElementById('db-search')?.value.trim().toLowerCase() || '';
   const color = document.getElementById('db-color-filter')?.value || '';
   dbFiltered = allAntibodies.filter(a => {
-    const match = !term ||
+    const matchSpecies = (a.species||'mouse') === currentDBSpecies;
+    const matchTerm    = !term ||
       (a.marker||'').toLowerCase().includes(term) ||
       (a.fluorochrome||'').toLowerCase().includes(term) ||
       (a.code||'').toLowerCase().includes(term) ||
       (a.clone||'').toLowerCase().includes(term);
-    return match && (!color || a.box_color === color);
+    const matchColor   = !color || a.box_color === color;
+    return matchSpecies && matchTerm && matchColor;
   });
   renderDB();
 }
 
 function renderDB() {
-  const tbody = document.getElementById('db-tbody');
+  const tbody    = document.getElementById('db-tbody');
+  const countEl  = document.getElementById('db-count');
+  const speciesCount = allAntibodies.filter(a => (a.species||'mouse') === currentDBSpecies).length;
+  if (countEl) countEl.textContent = speciesCount + ' antibodies (' + (currentDBSpecies==='human'?'🧑 Human':'🐭 Mouse') + ')';
   if (!tbody) return;
   if (!dbFiltered.length) {
     tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No antibodies found</div></td></tr>';
@@ -1412,11 +1454,7 @@ function showView(name) {
   if (name === 'similarity') renderSimilarityMatrix();
   if (name === 'prompt')     initPromptGenerator();
   if (name === 'database')   {
-    dbFiltered = [...allAntibodies];
     filterDB();
-    const countEl = document.getElementById('db-count');
-    if (countEl) countEl.textContent = allAntibodies.length + ' antibodies';
-    // If antibodies not loaded yet, reload
     if (!allAntibodies.length) loadAntibodies();
   }
 }
@@ -2050,6 +2088,9 @@ function openAddAntibody() {
     .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   const sel = document.getElementById('add-color');
   if (sel) sel.value = '';
+  // Update modal title to reflect species
+  const title = document.querySelector('#add-modal h3');
+  if (title) title.textContent = 'Add ' + (currentDBSpecies==='human'?'🧑 Human':'🐭 Mouse') + ' Antibody';
   openModal('add-modal');
 }
 
@@ -2066,7 +2107,8 @@ async function submitAddAntibody() {
     order_number: document.getElementById('add-order').value.trim(),
     backup_count: document.getElementById('add-backup').value.trim(),
     remarks: document.getElementById('add-remarks').value.trim(),
-    updated_by: userName
+    updated_by: userName,
+    species: currentDBSpecies || 'mouse'
   });
   if (error) { toast('Error: '+error.message, 'error'); return; }
   closeModal('add-modal'); toast('Antibody added!', 'success');
