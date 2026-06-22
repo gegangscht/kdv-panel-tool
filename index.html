@@ -468,7 +468,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v49</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v50</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -784,10 +784,13 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <div class="form-card">
       <h3>📦 I took a backup vial</h3>
       <div class="form-group">
-        <label class="form-label">Search Antibody</label>
-        <input type="text" class="form-input" id="so-search" placeholder="Type marker or code..." oninput="searchForSignout()">
+        <label class="form-label">Search — antibody, beads, kits, Fc block...</label>
+        <input type="text" class="form-input" id="so-search" placeholder="Type marker, item name, or code..." oninput="searchForSignout()">
         <div id="so-results" style="margin-top:8px;"></div>
         <div id="so-selected-display" style="display:none;margin-top:8px;padding:10px;background:var(--surface2);border-radius:var(--radius);font-size:13px;"></div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:-6px;margin-bottom:10px;">
+        Can't find what you need? <a href="#" onclick="openAddConsumable();return false;" style="color:var(--accent)">+ Add a new item</a> (Fc block, beads, kits etc.)
       </div>
       <div class="form-group">
         <label class="form-label">Notes (optional)</label>
@@ -1008,6 +1011,46 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
         <tr><td colspan="11"><div class="page-loader"><span class="loader"></span></div></td></tr>
       </tbody>
     </table>
+  </div>
+</div>
+
+<!-- ADD CONSUMABLE MODAL -->
+<div class="modal-overlay" id="add-consumable-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('add-consumable-modal')">×</button>
+    <h3>+ Add Item to Search</h3>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
+      For Fc block, beads, kits, live/dead dyes etc. Just a name is enough — fill in catalog details later when you order.
+    </p>
+    <div class="form-group">
+      <label class="form-label">Name *</label>
+      <input type="text" class="form-input" id="cons-name" placeholder="e.g. FoxP3 Fix/Perm Kit">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Category</label>
+      <select class="form-input" id="cons-category">
+        <option value="">Select...</option>
+        <option value="Fc Block">Fc Block</option>
+        <option value="Beads">Beads</option>
+        <option value="Kit">Kit</option>
+        <option value="Live/Dead Dye">Live/Dead Dye</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group">
+        <label class="form-label">Catalog # (optional)</label>
+        <input type="text" class="form-input" id="cons-catalog" placeholder="fill in later if unknown">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Company (optional)</label>
+        <input type="text" class="form-input" id="cons-company" placeholder="fill in later if unknown">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('add-consumable-modal')">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:8px 24px" onclick="submitAddConsumable()">Add Item</button>
+    </div>
   </div>
 </div>
 
@@ -1324,6 +1367,7 @@ function loginAs(name) {
   restorePanelFromLocal();
   initLiveDeadPicker();
   loadTissues().catch(e => console.warn('tissues:', e));  // non-blocking
+  loadConsumables().catch(e => console.warn('consumables:', e));  // non-blocking
   showView('landing');
   loadActivity();
 }
@@ -2244,43 +2288,127 @@ async function deleteAntibody(id) {
 }
 
 // ── SIGN-OUT ──────────────────────────────────────────────
+let allConsumables = [];
+
+async function loadConsumables() {
+  const { data } = await db.from('consumables').select('*').order('name');
+  allConsumables = data || [];
+}
+
 function searchForSignout() {
   const term = document.getElementById('so-search').value.trim().toLowerCase();
   const el   = document.getElementById('so-results');
   if (!term) { el.innerHTML=''; return; }
-  const results = allAntibodies.filter(a =>
+
+  // Search antibodies (both species)
+  const abResults = allAntibodies.filter(a =>
     (a.marker||'').toLowerCase().includes(term) || (a.code||'').toLowerCase().includes(term)
-  ).slice(0,8);
-  el.innerHTML = results.map(a => `
-    <div style="padding:8px 10px;background:var(--surface2);border-radius:var(--radius);margin-bottom:4px;cursor:pointer;font-size:13px;border:1px solid var(--border)"
-      onclick='selectForSignout(${JSON.stringify(a)})'>
-      <strong>${a.marker}</strong>
-      <span style="color:var(--muted)"> · ${a.fluorochrome||''} · ${a.code||''}</span>
-    </div>`).join('');
+  ).slice(0, 6).map(a => ({ ...a, _type: 'antibody' }));
+
+  // Search consumables
+  const consResults = allConsumables.filter(c =>
+    (c.name||'').toLowerCase().includes(term) || (c.category||'').toLowerCase().includes(term)
+  ).slice(0, 6).map(c => ({ ...c, _type: 'consumable' }));
+
+  const results = [...abResults, ...consResults];
+
+  if (!results.length) {
+    el.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:6px 2px">No matches. <a href="#" onclick="openAddConsumable();return false;" style="color:var(--accent)">Add a new item?</a></div>';
+    return;
+  }
+
+  el.innerHTML = results.map(item => {
+    if (item._type === 'antibody') {
+      const speciesTag = item.species === 'human'
+        ? '<span style="background:#3b82f622;color:var(--blue);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;">🧑 HUMAN</span>'
+        : '<span style="background:#22c55e22;color:var(--green);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;">🐭 MOUSE</span>';
+      return `<div style="padding:8px 10px;background:var(--surface2);border-radius:var(--radius);margin-bottom:4px;cursor:pointer;font-size:13px;border:1px solid var(--border)"
+        onclick='selectForSignout(${JSON.stringify(item)})'>
+        ${speciesTag}
+        <strong style="margin-left:4px">${item.marker}</strong>
+        <span style="color:var(--muted)"> · ${item.fluorochrome||''} · ${item.code||''}</span>
+      </div>`;
+    } else {
+      return `<div style="padding:8px 10px;background:var(--surface2);border-radius:var(--radius);margin-bottom:4px;cursor:pointer;font-size:13px;border:1px solid var(--border)"
+        onclick='selectForSignout(${JSON.stringify(item)})'>
+        <span style="background:#a855f722;color:var(--violet);padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;">📦 ITEM</span>
+        <strong style="margin-left:4px">${item.name}</strong>
+        <span style="color:var(--muted)"> · ${item.category||''}${item.catalog_number ? ' · '+item.catalog_number : ''}</span>
+      </div>`;
+    }
+  }).join('');
 }
 
-function selectForSignout(a) {
-  soSelected = a;
+function selectForSignout(item) {
+  soSelected = item;
   document.getElementById('so-results').innerHTML='';
   document.getElementById('so-search').value='';
   const d = document.getElementById('so-selected-display');
   d.style.display='block';
-  d.innerHTML=`<strong>${a.marker}</strong> · ${a.fluorochrome||''} · <span style="font-family:var(--mono);color:var(--accent)">${a.code||''}</span>
-    <button class="btn-icon" style="margin-left:8px;font-size:11px" onclick="soSelected=null;document.getElementById('so-selected-display').style.display='none'">✕</button>`;
+
+  if (item._type === 'antibody') {
+    const speciesTag = item.species === 'human' ? '🧑 Human' : '🐭 Mouse';
+    d.innerHTML=`${speciesTag} · <strong>${item.marker}</strong> · ${item.fluorochrome||''} · <span style="font-family:var(--mono);color:var(--accent)">${item.code||''}</span>
+      <button class="btn-icon" style="margin-left:8px;font-size:11px" onclick="soSelected=null;document.getElementById('so-selected-display').style.display='none'">✕</button>`;
+  } else {
+    d.innerHTML=`📦 <strong>${item.name}</strong> · ${item.category||''}${item.catalog_number ? ' · '+item.catalog_number : ''}
+      <button class="btn-icon" style="margin-left:8px;font-size:11px" onclick="soSelected=null;document.getElementById('so-selected-display').style.display='none'">✕</button>`;
+  }
 }
 
 async function submitSignout() {
-  if (!soSelected) { toast('Select an antibody first', 'error'); return; }
-  const { error } = await db.from('signout_log').insert({
-    antibody_code: soSelected.code, antibody_marker: soSelected.marker,
-    antibody_fluorochrome: soSelected.fluorochrome,
-    taken_by: userName, notes: document.getElementById('so-notes').value.trim()
-  });
+  if (!soSelected) { toast('Select an item first', 'error'); return; }
+
+  let insertData;
+  if (soSelected._type === 'consumable') {
+    insertData = {
+      antibody_code: soSelected.catalog_number || '',
+      antibody_marker: soSelected.name,
+      antibody_fluorochrome: soSelected.category || 'Consumable',
+      taken_by: userName,
+      notes: document.getElementById('so-notes').value.trim()
+    };
+  } else {
+    insertData = {
+      antibody_code: soSelected.code,
+      antibody_marker: (soSelected.species==='human' ? '[Human] ' : '') + soSelected.marker,
+      antibody_fluorochrome: soSelected.fluorochrome,
+      taken_by: userName,
+      notes: document.getElementById('so-notes').value.trim()
+    };
+  }
+
+  const { error } = await db.from('signout_log').insert(insertData);
   if (error) { toast('Error: '+error.message, 'error'); return; }
   soSelected=null;
   document.getElementById('so-selected-display').style.display='none';
   document.getElementById('so-notes').value='';
-  toast('Sign-out logged!', 'success'); loadSignoutLog();
+  toast('Order logged!', 'success'); loadSignoutLog();
+}
+
+function openAddConsumable() {
+  document.getElementById('cons-name').value = '';
+  document.getElementById('cons-category').value = '';
+  document.getElementById('cons-catalog').value = '';
+  document.getElementById('cons-company').value = '';
+  document.getElementById('so-results').innerHTML = '';
+  openModal('add-consumable-modal');
+}
+
+async function submitAddConsumable() {
+  const name = document.getElementById('cons-name').value.trim();
+  if (!name) { toast('Name is required', 'error'); return; }
+  const { error } = await db.from('consumables').insert({
+    name,
+    category: document.getElementById('cons-category').value,
+    catalog_number: document.getElementById('cons-catalog').value.trim(),
+    company: document.getElementById('cons-company').value.trim(),
+    updated_by: userName
+  });
+  if (error) { toast('Error: '+error.message, 'error'); return; }
+  closeModal('add-consumable-modal');
+  toast('Item added — search for it now!', 'success');
+  await loadConsumables();
 }
 
 async function loadSignoutLog() {
