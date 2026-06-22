@@ -277,7 +277,8 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .saved-panel-card:hover { border-color: var(--accent); }
 .sp-name { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
 .sp-meta { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
-.sp-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.sp-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.sp-actions .btn-icon, .sp-actions .btn-icon.danger { padding: 4px 7px; flex-shrink: 0; }
 .sp-markers { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px; }
 .sp-marker-chip { padding: 3px 8px; border-radius: 5px; font-size: 11px; font-weight: 500; background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
 
@@ -467,7 +468,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v48</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v49</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -520,12 +521,12 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     </div>
     <div class="action-card" onclick="openAddAntibody()">
       <span class="action-icon">➕</span>
-      <div class="action-title">Add / Order Antibody</div>
-      <div class="action-desc">Register a new antibody or log an incoming order</div>
+      <div class="action-title">Add Antibody</div>
+      <div class="action-desc">Register a new antibody in the database</div>
     </div>
     <div class="action-card" onclick="showView('signout')">
       <span class="action-icon">📦</span>
-      <div class="action-title">Sign Out Backup</div>
+      <div class="action-title">Order Backup</div>
       <div class="action-desc">Log when you take a backup vial from the collection</div>
     </div>
   </div>
@@ -716,22 +717,23 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   <div class="page-header">
     <div class="page-header-text"><h2>Saved Panels</h2><p>Browse panels from the whole lab</p></div>
     <div class="page-header-actions">
-      <select id="panels-user-filter" class="search-input" style="width:160px" onchange="loadSavedPanels()">
-        <option value="">All users</option>
-      </select>
-      <select id="panels-species-filter" class="search-input" style="width:130px" onchange="loadSavedPanels()">
-        <option value="">All species</option>
-        <option value="mouse">🐭 Mouse</option>
-        <option value="human">🧑 Human</option>
-      </select>
-      <select id="panels-sort" class="search-input" style="width:140px" onchange="loadSavedPanels()">
-        <option value="created_at">Newest first</option>
-        <option value="name">By name</option>
-      </select>
       <button class="btn-secondary" onclick="showView('builder')">+ New Panel</button>
     </div>
   </div>
-  <div class="panels-grid" id="panels-grid"><div class="page-loader"><span class="loader"></span></div></div>
+  <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+    <input type="text" id="panels-marker-search" class="search-input" style="flex:1;min-width:220px"
+      placeholder="Search panels by marker (e.g. CD8, FoxP3)..." oninput="loadSavedPanels()">
+    <select id="panels-species-filter" class="search-input" style="width:130px" onchange="loadSavedPanels()">
+      <option value="">All species</option>
+      <option value="mouse">🐭 Mouse</option>
+      <option value="human">🧑 Human</option>
+    </select>
+    <select id="panels-sort" class="search-input" style="width:140px" onchange="loadSavedPanels()">
+      <option value="created_at">Newest first</option>
+      <option value="name">By name</option>
+    </select>
+  </div>
+  <div id="panels-grid"><div class="page-loader"><span class="loader"></span></div></div>
 </div>
 
 <!-- DATABASE -->
@@ -1947,14 +1949,13 @@ async function savePanel() {
 
 // ── SAVED PANELS ──────────────────────────────────────────
 async function loadSavedPanels() {
-  const grid        = document.getElementById('panels-grid');
-  const userFilter  = document.getElementById('panels-user-filter')?.value || '';
-  const sortField   = document.getElementById('panels-sort')?.value || 'created_at';
-  grid.innerHTML    = '<div class="page-loader"><span class="loader"></span></div>';
+  const grid           = document.getElementById('panels-grid');
+  const speciesFilter  = document.getElementById('panels-species-filter')?.value || '';
+  const sortField      = document.getElementById('panels-sort')?.value || 'created_at';
+  const markerSearch    = document.getElementById('panels-marker-search')?.value.trim().toLowerCase() || '';
+  grid.innerHTML = '<div class="page-loader"><span class="loader"></span></div>';
 
-  const speciesFilter = document.getElementById('panels-species-filter')?.value || '';
   let query = db.from('panels').select('*, panel_rows(*)');
-  if (userFilter)    query = query.eq('user_name', userFilter);
   if (speciesFilter) query = query.eq('species', speciesFilter);
   if (sortField === 'name') query = query.order('name');
   else query = query.order('created_at', { ascending: false });
@@ -1962,16 +1963,19 @@ async function loadSavedPanels() {
   const { data } = await query;
   if (!data?.length) { grid.innerHTML = '<div class="empty-state">No saved panels yet</div>'; return; }
 
-  // Populate user filter dropdown
-  const userSel = document.getElementById('panels-user-filter');
-  if (userSel && userSel.options.length <= 1) {
-    const users = [...new Set(data.map(p => p.user_name).filter(Boolean))].sort();
-    users.forEach(u => {
-      const opt = document.createElement('option');
-      opt.value = u; opt.textContent = u;
-      if (u === userFilter) opt.selected = true;
-      userSel.appendChild(opt);
+  // Marker search filter — match if ANY row in the panel matches ANY search term
+  let filteredData = data;
+  if (markerSearch) {
+    const terms = markerSearch.split(/[,\s]+/).filter(Boolean);
+    filteredData = data.filter(p => {
+      const rows = p.panel_rows || [];
+      return terms.some(term => rows.some(r => (r.marker||'').toLowerCase().includes(term)));
     });
+  }
+
+  if (!filteredData.length) {
+    grid.innerHTML = '<div class="empty-state">No panels match your search</div>';
+    return;
   }
 
   // Favorites from localStorage
@@ -1979,7 +1983,7 @@ async function loadSavedPanels() {
 
   // Group panels by user
   const byUser = {};
-  data.forEach(p => {
+  filteredData.forEach(p => {
     const u = p.user_name || 'Unknown';
     if (!byUser[u]) byUser[u] = [];
     byUser[u].push(p);
@@ -1990,7 +1994,7 @@ async function loadSavedPanels() {
     byUser[u].sort((a, b) => {
       const aFav = favs.includes(a.id) ? 1 : 0;
       const bFav = favs.includes(b.id) ? 1 : 0;
-      if (aFav !== bFav) return bFav - aFav; // favorites first
+      if (aFav !== bFav) return bFav - aFav;
       if (sortField === 'name') return (a.name||'').localeCompare(b.name||'');
       return new Date(b.created_at) - new Date(a.created_at);
     });
@@ -2002,6 +2006,15 @@ async function loadSavedPanels() {
     if (b === userName) return 1;
     return a.localeCompare(b);
   });
+
+  // Expanded state — "My Panels" always expanded; others remembered per-user, default collapsed
+  // unless a marker search is active (then auto-expand matching sections)
+  function isExpanded(u) {
+    if (u === userName) return true;
+    if (markerSearch) return true; // auto-expand all matches when searching
+    const saved = localStorage.getItem('kdv_panels_expanded_' + u);
+    return saved === '1';
+  }
 
   function buildCard(p) {
     const rows  = (p.panel_rows||[]).filter(r => r.notes !== 'live_dead');
@@ -2035,18 +2048,34 @@ async function loadSavedPanels() {
   let html = '';
   userNames.forEach(u => {
     const isMe = u === userName;
-    html += `<div style="margin-bottom:28px;">
-      <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${isMe?'var(--accent)':'var(--muted)'};margin-bottom:12px;display:flex;align-items:center;gap:8px;">
-        ${isMe ? '⭐ My Panels' : '👤 ' + u}
+    const expanded = isExpanded(u);
+    const sectionId = 'panel-group-' + u.replace(/[^a-zA-Z0-9]/g, '_');
+
+    html += `<div style="margin-bottom:20px;">
+      <div onclick="${isMe ? '' : `toggleUserPanels('${u}')`}"
+        style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${isMe?'var(--accent)':'var(--text)'};margin-bottom:12px;display:flex;align-items:center;gap:8px;${isMe?'':'cursor:pointer;'}padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);">
+        ${isMe ? '⭐' : (expanded ? '▾' : '▸')}
+        ${isMe ? 'My Panels' : u}
         <span style="font-size:11px;font-weight:400;color:var(--muted)">(${byUser[u].length})</span>
       </div>
-      <div class="panels-grid">
+      <div class="panels-grid" id="${sectionId}" style="display:${expanded?'grid':'none'};grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));gap:16px;">
         ${byUser[u].map(buildCard).join('')}
       </div>
     </div>`;
   });
 
   grid.innerHTML = html;
+}
+
+function toggleUserPanels(u) {
+  const sectionId = 'panel-group-' + u.replace(/[^a-zA-Z0-9]/g, '_');
+  const el = document.getElementById(sectionId);
+  if (!el) return;
+  const willExpand = el.style.display === 'none';
+  el.style.display = willExpand ? 'grid' : 'none';
+  localStorage.setItem('kdv_panels_expanded_' + u, willExpand ? '1' : '0');
+  // Update chevron
+  loadSavedPanels(); // simplest: just re-render to update chevron icon too
 }
 
 function toggleFavorite(panelId) {
@@ -2059,6 +2088,7 @@ function toggleFavorite(panelId) {
   localStorage.setItem('kdv_favorite_panels', JSON.stringify(favs));
   loadSavedPanels();
 }
+
 
 async function loadPanelIntoBuilder(panelId) {
   const { data, error } = await db.from('panel_rows').select('*').eq('panel_id', panelId).order('sort_order');
