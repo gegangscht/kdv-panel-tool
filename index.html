@@ -468,7 +468,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v50</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v51</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -740,21 +740,25 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 <div id="database-view" class="view">
   <div class="page-header">
     <div class="page-header-text"><h2>Antibody Database</h2><p id="db-count"></p></div>
-    <div class="page-header-actions"><button class="btn-secondary" onclick="openAddAntibody()">+ Add Antibody</button></div>
+    <div class="page-header-actions"><button class="btn-secondary" id="db-add-btn" onclick="dbAddClicked()">+ Add Antibody</button></div>
   </div>
-  <!-- Species toggle for database -->
+  <!-- Database toggle: mouse / human / consumables -->
   <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px;width:fit-content;">
     <button id="db-species-mouse" onclick="setDBSpecies('mouse')"
-      style="padding:8px 20px;border:none;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;background:var(--accent);color:#fff;">
-      🐭 Mouse Database
+      style="padding:8px 18px;border:none;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;background:var(--accent);color:#fff;">
+      🐭 Mouse
     </button>
     <button id="db-species-human" onclick="setDBSpecies('human')"
-      style="padding:8px 20px;border:none;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;background:var(--surface2);color:var(--muted);">
-      🧑 Human Database
+      style="padding:8px 18px;border:none;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;background:var(--surface2);color:var(--muted);">
+      🧑 Human
+    </button>
+    <button id="db-species-consumables" onclick="setDBSpecies('consumables')"
+      style="padding:8px 18px;border:none;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;background:var(--surface2);color:var(--muted);">
+      📦 Consumables
     </button>
   </div>
   <div class="db-toolbar">
-    <input type="text" placeholder="Search marker, fluorochrome, code..." id="db-search" oninput="filterDB()">
+    <input type="text" placeholder="Search marker, fluorochrome, code..." id="db-search" oninput="currentDBSpecies==='consumables' ? renderConsumablesDB() : filterDB()">
     <select id="db-color-filter" onchange="filterDB()">
       <option value="">All colors</option>
       <option value="Blue">Blue</option><option value="Green">Green</option>
@@ -1399,20 +1403,130 @@ async function init() {
 
 // ── DATA ──────────────────────────────────────────────────
 // ── DATABASE ──────────────────────────────────────────────
+function dbAddClicked() {
+  if (currentDBSpecies === 'consumables') openAddConsumable();
+  else openAddAntibody();
+}
+
+function renderConsumablesDB() {
+  const tbody = document.getElementById('db-tbody');
+  const countEl = document.getElementById('db-count');
+  const term = document.getElementById('db-search')?.value.trim().toLowerCase() || '';
+
+  let filtered = allConsumables.filter(c =>
+    !term ||
+    (c.name||'').toLowerCase().includes(term) ||
+    (c.category||'').toLowerCase().includes(term) ||
+    (c.catalog_number||'').toLowerCase().includes(term) ||
+    (c.company||'').toLowerCase().includes(term)
+  );
+
+  if (countEl) countEl.textContent = filtered.length + ' items (📦 Consumables)';
+
+  // Update table headers for consumables structure
+  const thead = document.querySelector('#database-view .db-table thead tr');
+  if (thead) {
+    thead.innerHTML = '<th>Name</th><th>Category</th><th>Catalog #</th><th>Company</th><th>Notes</th><th></th><th></th><th></th>';
+  }
+
+  if (!tbody) return;
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">No items found</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(c => `
+    <tr>
+      <td><strong>${c.name||''}</strong></td>
+      <td>${c.category ? `<span class="laser-badge" style="background:#a855f722;color:var(--violet);border:1px solid #a855f733;">${c.category}</span>` : ''}</td>
+      <td style="font-family:var(--mono);font-size:12px;color:var(--accent)">${c.catalog_number||'<span style=\'color:var(--muted)\'>—</span>'}</td>
+      <td style="color:var(--muted)">${c.company||''}</td>
+      <td style="color:var(--muted);font-size:12px">${c.notes||''}</td>
+      <td></td><td></td>
+      <td style="white-space:nowrap">
+        <button class="btn-icon" onclick='openEditConsumable(${JSON.stringify(c)})'>Edit</button>
+        <button class="btn-icon danger" onclick="deleteConsumable('${c.id}')">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function deleteConsumable(id) {
+  if (!confirm('Delete this item?')) return;
+  await db.from('consumables').delete().eq('id', id);
+  toast('Deleted'); await loadConsumables(); renderConsumablesDB();
+}
+
+function openEditConsumable(c) {
+  openAddConsumable(); // reuse modal, then populate + change submit behavior
+  document.getElementById('cons-name').value = c.name || '';
+  document.getElementById('cons-category').value = c.category || '';
+  document.getElementById('cons-catalog').value = c.catalog_number || '';
+  document.getElementById('cons-company').value = c.company || '';
+  document.querySelector('#add-consumable-modal h3').textContent = 'Edit Item';
+  const submitBtn = document.querySelector('#add-consumable-modal .btn-primary');
+  submitBtn.textContent = 'Save Changes';
+  submitBtn.onclick = () => submitEditConsumable(c.id);
+}
+
+async function submitEditConsumable(id) {
+  const name = document.getElementById('cons-name').value.trim();
+  if (!name) { toast('Name is required', 'error'); return; }
+  const { error } = await db.from('consumables').update({
+    name,
+    category: document.getElementById('cons-category').value,
+    catalog_number: document.getElementById('cons-catalog').value.trim(),
+    company: document.getElementById('cons-company').value.trim(),
+    updated_by: userName
+  }).eq('id', id);
+  if (error) { toast('Error: '+error.message, 'error'); return; }
+  closeModal('add-consumable-modal');
+  // Reset modal back to "Add" mode for next time
+  document.querySelector('#add-consumable-modal h3').textContent = '+ Add Item to Search';
+  const submitBtn = document.querySelector('#add-consumable-modal .btn-primary');
+  submitBtn.textContent = 'Add Item';
+  submitBtn.onclick = submitAddConsumable;
+  toast('Updated!', 'success');
+  await loadConsumables();
+  renderConsumablesDB();
+}
+
 let currentDBSpecies = 'mouse';
 
 function setDBSpecies(sp) {
   currentDBSpecies = sp;
   const mBtn = document.getElementById('db-species-mouse');
   const hBtn = document.getElementById('db-species-human');
-  if (mBtn) { mBtn.style.background = sp==='mouse' ? 'var(--accent)' : 'var(--surface2)'; mBtn.style.color = sp==='mouse' ? '#fff' : 'var(--muted)'; }
-  if (hBtn) { hBtn.style.background = sp==='human' ? 'var(--accent)' : 'var(--surface2)'; hBtn.style.color = sp==='human' ? '#fff' : 'var(--muted)'; }
+  const cBtn = document.getElementById('db-species-consumables');
+  [ [mBtn,'mouse'], [hBtn,'human'], [cBtn,'consumables'] ].forEach(([btn,val]) => {
+    if (!btn) return;
+    btn.style.background = sp===val ? 'var(--accent)' : 'var(--surface2)';
+    btn.style.color      = sp===val ? '#fff' : 'var(--muted)';
+  });
   document.getElementById('db-search').value = '';
-  document.getElementById('db-color-filter').value = '';
-  filterDB();
+  if (document.getElementById('db-color-filter')) document.getElementById('db-color-filter').value = '';
+
+  // Toggle color filter visibility — consumables don't have laser colors
+  const colorFilter = document.getElementById('db-color-filter');
+  if (colorFilter) colorFilter.style.display = sp === 'consumables' ? 'none' : 'block';
+
+  // Toggle Add button text/handler
+  const addBtn = document.getElementById('db-add-btn');
+  if (addBtn) addBtn.textContent = sp === 'consumables' ? '+ Add Item' : '+ Add Antibody';
+
+  if (sp === 'consumables') {
+    renderConsumablesDB();
+  } else {
+    filterDB();
+  }
 }
 
 function filterDB() {
+  // Restore antibody table headers (in case consumables view changed them)
+  const thead = document.querySelector('#database-view .db-table thead tr');
+  if (thead) {
+    thead.innerHTML = '<th>Code</th><th>Marker</th><th>Fluorochrome</th><th>Laser Color</th><th>Clone</th><th>Company</th><th>Remarks</th><th></th>';
+  }
+
   const term  = document.getElementById('db-search')?.value.trim().toLowerCase() || '';
   const color = document.getElementById('db-color-filter')?.value || '';
   dbFiltered = allAntibodies.filter(a => {
@@ -1500,8 +1614,13 @@ function showView(name) {
   if (name === 'similarity') renderSimilarityMatrix();
   if (name === 'prompt')     initPromptGenerator();
   if (name === 'database')   {
-    filterDB();
-    if (!allAntibodies.length) loadAntibodies();
+    if (currentDBSpecies === 'consumables') {
+      renderConsumablesDB();
+      if (!allConsumables.length) loadConsumables().then(renderConsumablesDB);
+    } else {
+      filterDB();
+      if (!allAntibodies.length) loadAntibodies();
+    }
   }
 }
 
