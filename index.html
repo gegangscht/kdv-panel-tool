@@ -460,14 +460,14 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('builder');closeMenu()">Panel Builder</button>
     <button class="nav-btn" onclick="showView('saved');closeMenu()">Saved Panels</button>
     <button class="nav-btn" onclick="showView('database');closeMenu()">Database</button>
-    <button class="nav-btn" onclick="showView('signout');closeMenu()">Sign-out Log</button>
+    <button class="nav-btn" onclick="showView('signout');closeMenu()">Order Backup</button>
     <button class="nav-btn" onclick="showView('experiment');closeMenu()">Experiment</button>
     <button class="nav-btn" onclick="showView('dilutions');closeMenu()">Dilution DB</button>
     <button class="nav-btn" onclick="showView('similarity');closeMenu()">Similarity</button>
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v44</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v48</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -773,14 +773,14 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 <!-- SIGN-OUT -->
 <div id="signout-view" class="view">
   <div class="page-header">
-    <div class="page-header-text"><h2>Sign-out Log</h2><p>Log when you take a backup vial</p></div>
+    <div class="page-header-text"><h2>Order Backup</h2><p>Mark a backup vial as taken — this builds the list for the next antibody order</p></div>
     <div class="page-header-actions">
-      <button class="btn-secondary" onclick="showOrderPreview()">📋 Preview Order List</button>
+      <button class="btn-secondary" onclick="showOrderPreview()">🛒 Finalize Order (export & clear list)</button>
     </div>
   </div>
   <div class="signout-layout">
     <div class="form-card">
-      <h3>📦 Sign Out a Backup Vial</h3>
+      <h3>📦 I took a backup vial</h3>
       <div class="form-group">
         <label class="form-label">Search Antibody</label>
         <input type="text" class="form-input" id="so-search" placeholder="Type marker or code..." oninput="searchForSignout()">
@@ -791,11 +791,11 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
         <label class="form-label">Notes (optional)</label>
         <input type="text" class="form-input" id="so-notes" placeholder="e.g. opening backup vial">
       </div>
-      <button class="btn-primary" onclick="submitSignout()">Log Sign-out</button>
+      <button class="btn-primary" onclick="submitSignout()">Order Backup</button>
     </div>
     <div>
       <div class="panel-section">
-        <div class="panel-section-header">📜 Recent Sign-outs</div>
+        <div class="panel-section-header">📜 Recently Taken</div>
         <div id="signout-log-list" style="padding:8px 0;"><div class="page-loader"><span class="loader"></span></div></div>
       </div>
     </div>
@@ -813,14 +813,14 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 <div class="modal-overlay" id="order-modal">
   <div class="modal" style="max-width:700px">
     <button class="modal-close" onclick="closeModal('order-modal')">×</button>
-    <h3>📋 Order List — Antibodies from Sign-out Log</h3>
+    <h3>🛒 Order List</h3>
     <p style="color:var(--muted);font-size:13px;margin-bottom:16px">
-      These antibodies had backup vials taken. Review and click "Export &amp; Log Order" to download a CSV and record the order date.
+      These antibodies had their backup vial taken. Uncheck any you don't want to order now — they'll stay on the list for next time. Checked items will be <strong style="color:var(--text)">downloaded as a CSV and removed from this list</strong> once ordered.
     </p>
     <div id="order-preview-table" style="max-height:400px;overflow-y:auto;margin-bottom:16px;"></div>
     <div class="modal-actions">
       <button class="btn-secondary" onclick="closeModal('order-modal')">Cancel</button>
-      <button class="btn-primary" style="width:auto;padding:8px 24px" onclick="exportAndLogOrder()">📥 Export &amp; Log Order</button>
+      <button class="btn-primary" style="width:auto;padding:8px 24px" onclick="exportAndLogOrder()">📥 Export List &amp; Remove from Orders</button>
     </div>
   </div>
 </div>
@@ -1954,8 +1954,8 @@ async function loadSavedPanels() {
 
   const speciesFilter = document.getElementById('panels-species-filter')?.value || '';
   let query = db.from('panels').select('*, panel_rows(*)');
-  if (userFilter)     query = query.eq('user_name', userFilter);
-  if (speciesFilter)  query = query.eq('species', speciesFilter);
+  if (userFilter)    query = query.eq('user_name', userFilter);
+  if (speciesFilter) query = query.eq('species', speciesFilter);
   if (sortField === 'name') query = query.order('name');
   else query = query.order('created_at', { ascending: false });
 
@@ -1974,17 +1974,47 @@ async function loadSavedPanels() {
     });
   }
 
-  grid.innerHTML = data.map(p => {
-    const rows = (p.panel_rows||[]).filter(r => r.notes !== 'live_dead');
-    const date = new Date(p.created_at).toLocaleDateString('nl-NL');
+  // Favorites from localStorage
+  const favs = JSON.parse(localStorage.getItem('kdv_favorite_panels') || '[]');
+
+  // Group panels by user
+  const byUser = {};
+  data.forEach(p => {
+    const u = p.user_name || 'Unknown';
+    if (!byUser[u]) byUser[u] = [];
+    byUser[u].push(p);
+  });
+
+  // Sort each user's panels: favorites first, then by sortField
+  Object.keys(byUser).forEach(u => {
+    byUser[u].sort((a, b) => {
+      const aFav = favs.includes(a.id) ? 1 : 0;
+      const bFav = favs.includes(b.id) ? 1 : 0;
+      if (aFav !== bFav) return bFav - aFav; // favorites first
+      if (sortField === 'name') return (a.name||'').localeCompare(b.name||'');
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+  });
+
+  // Order user groups: current user first, then alphabetical
+  const userNames = Object.keys(byUser).sort((a, b) => {
+    if (a === userName) return -1;
+    if (b === userName) return 1;
+    return a.localeCompare(b);
+  });
+
+  function buildCard(p) {
+    const rows  = (p.panel_rows||[]).filter(r => r.notes !== 'live_dead');
+    const date  = new Date(p.created_at).toLocaleDateString('nl-NL');
     const surface = rows.filter(r => (r.staining_type||'surface') === 'surface');
     const ic      = rows.filter(r => r.staining_type === 'intracellular');
     const chips   = rows.slice(0,6).map(r =>
       `<span class="sp-marker-chip" style="${r.staining_type==='intracellular' ? 'border-color:var(--violet);color:var(--violet)' : ''}">${r.marker}</span>`
     ).join('') + (rows.length>6 ? `<span class="sp-marker-chip">+${rows.length-6}</span>` : '');
+    const isFav = favs.includes(p.id);
 
-    return `<div class="saved-panel-card">
-      <div class="sp-name">${p.name}</div>
+    return `<div class="saved-panel-card" style="${isFav?'border-color:#f59e0b66':''}">
+      <div class="sp-name">${isFav?'★ ':''}${p.name}</div>
       <div class="sp-meta">
         <span style="background:${p.species==='human'?'#3b82f622':'#22c55e22'};color:${p.species==='human'?'var(--blue)':'var(--green)'};padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-right:6px;">
           ${p.species==='human'?'🧑 Human':'🐭 Mouse'}
@@ -1993,13 +2023,41 @@ async function loadSavedPanels() {
       </div>
       <div class="sp-markers">${chips}</div>
       <div class="sp-actions">
-        <button class="btn-save" style="font-size:12px;padding:6px 14px" onclick="usePanelForExperiment('${p.id}','${p.name.replace(/'/g,"\'")}')">Use Panel →</button>
+        <button class="btn-save" style="font-size:12px;padding:6px 14px" onclick="usePanelForExperiment('${p.id}','${p.name.replace(/'/g,"\\'")}')">Use Panel →</button>
         <button class="btn-secondary" style="font-size:12px;padding:6px 12px" onclick="loadPanelIntoBuilder('${p.id}')">Edit</button>
         <button class="btn-secondary" style="font-size:12px;padding:6px 12px" onclick="duplicatePanel(this)" data-id="${p.id}" data-name="${p.name.replace(/"/g,'&quot;')}">Duplicate</button>
+        ${p.user_name === userName ? `<button class="btn-icon" onclick="toggleFavorite('${p.id}')" title="${isFav?'Unpin':'Pin to top'}" style="${isFav?'color:#f59e0b;border-color:#f59e0b':''}">${isFav?'★':'☆'}</button>` : ''}
         ${p.user_name === userName ? `<button class="btn-icon danger" onclick="deletePanel('${p.id}')">Delete</button>` : ''}
       </div>
     </div>`;
-  }).join('');
+  }
+
+  let html = '';
+  userNames.forEach(u => {
+    const isMe = u === userName;
+    html += `<div style="margin-bottom:28px;">
+      <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:${isMe?'var(--accent)':'var(--muted)'};margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+        ${isMe ? '⭐ My Panels' : '👤 ' + u}
+        <span style="font-size:11px;font-weight:400;color:var(--muted)">(${byUser[u].length})</span>
+      </div>
+      <div class="panels-grid">
+        ${byUser[u].map(buildCard).join('')}
+      </div>
+    </div>`;
+  });
+
+  grid.innerHTML = html;
+}
+
+function toggleFavorite(panelId) {
+  let favs = JSON.parse(localStorage.getItem('kdv_favorite_panels') || '[]');
+  if (favs.includes(panelId)) {
+    favs = favs.filter(id => id !== panelId);
+  } else {
+    favs.push(panelId);
+  }
+  localStorage.setItem('kdv_favorite_panels', JSON.stringify(favs));
+  loadSavedPanels();
 }
 
 async function loadPanelIntoBuilder(panelId) {
@@ -2480,9 +2538,9 @@ async function exportAndLogOrder() {
   if (error) {
     // Table might not exist yet — still export worked
     console.warn('Order log table not found:', error.message);
-    toast(`Exported ${checked.length} antibodies — remember to run the SQL to enable order logging!`, 'success');
+    toast(`Exported ${checked.length} antibodies and removed from the order list`, 'success');
   } else {
-    toast(`Exported & logged ${checked.length} antibodies`, 'success');
+    toast(`Exported ${checked.length} antibodies and removed from the order list`, 'success');
   }
 
   // Remove exported items from sign-out log
@@ -2939,8 +2997,10 @@ function calcTubeCount() {
     return vol;
   }
 
-  const totalVolSurface = Math.ceil(applyMargin(tubes * volSurface * (mixSurface === '2x' ? 2 : 1)));
-  const totalVolIC      = Math.ceil(applyMargin(tubes * volIC      * (mixIC      === '2x' ? 2 : 1)));
+  // Mix type (1x/2x) affects CONCENTRATION, not total volume.
+  // Total mastermix volume = tubes × volume per tube, regardless of mix type.
+  const totalVolSurface = Math.ceil(applyMargin(tubes * volSurface));
+  const totalVolIC      = Math.ceil(applyMargin(tubes * volIC));
 
   return { tubes, totalVolSurface, totalVolIC };
 }
