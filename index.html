@@ -469,7 +469,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v52</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v53</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -1174,7 +1174,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
           <div id="pg-panel-summary" style="display:none;font-size:11px;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px;line-height:1.6;"></div>
           <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);cursor:pointer;">
             <input type="checkbox" id="pg-include-alts">
-            Include fluorochrome alternatives (for substitution/rotation suggestions)
+            Include all fluorochrome options for each panel marker (lets the AI work out rotations if a new marker doesn't fit)
           </label>
         </div>
       </div>
@@ -1343,6 +1343,7 @@ let allAntibodies = [];
 let allFluorochromes = [];
 let fluorMap      = {};
 let currentPanel  = [];
+let currentPanelId = null;  // id of the saved panel currently loaded into the builder, if any
 let dbFiltered    = [];
 let soSelected    = null;
 
@@ -1845,6 +1846,8 @@ function clearPanel() {
   if (!currentPanel.length) return;
   if (!confirm('Clear the entire panel?')) return;
   currentPanel = [];
+  currentPanelId = null;
+  localStorage.setItem('kdv_current_panel_id', '');
   savePanelToLocal();
   renderPanel();
 }
@@ -1962,6 +1965,7 @@ function savePanelToLocal() {
   localStorage.setItem('kdv_current_panel', JSON.stringify(currentPanel));
   localStorage.setItem('kdv_current_livedead', JSON.stringify(currentLiveDead));
   localStorage.setItem('kdv_panel_name', document.getElementById('panel-name')?.value || '');
+  localStorage.setItem('kdv_current_panel_id', currentPanelId || '');
   setTimeout(renderPanelSimilarity, 50);
 }
 
@@ -1976,6 +1980,8 @@ function restorePanelFromLocal() {
       if (name) document.getElementById('panel-name').value = name;
       renderPanel();
     }
+    const savedPanelId = localStorage.getItem('kdv_current_panel_id');
+    currentPanelId = savedPanelId ? savedPanelId : null;
     if (savedLD) {
       currentLiveDead = JSON.parse(savedLD);
       renderLiveDead();
@@ -2075,23 +2081,42 @@ async function savePanel() {
   if (!name) { toast('Enter a panel name first', 'error'); return; }
   if (!currentPanel.length) { toast('Panel is empty', 'error'); return; }
 
-  // Check if panel with same name+user already exists → overwrite
-  const { data: existing } = await db.from('panels')
-    .select('id').eq('name', name).eq('user_name', userName).maybeSingle();
-
   let panelId;
-  if (existing) {
-    // Delete old rows and update timestamp
-    await db.from('panel_rows').delete().eq('panel_id', existing.id);
+  let isUpdate = false;
+
+  if (currentPanelId) {
+    // A saved panel is loaded (via Edit, or a freshly-made duplicate) — update
+    // THAT specific row by id. This is what a rename should do too: same panel,
+    // new name. Never fall back to name-matching here, since that's what caused
+    // saves to silently land on the wrong panel or create stray duplicates.
     const pNotes2 = document.getElementById('panel-notes')?.value || '';
-    await db.from('panels').update({ updated_at: new Date().toISOString(), notes: pNotes2, species: currentSpecies || 'mouse' }).eq('id', existing.id);
-    panelId = existing.id;
+    const { error: updateError } = await db.from('panels')
+      .update({ name, updated_at: new Date().toISOString(), notes: pNotes2, species: currentSpecies || 'mouse' })
+      .eq('id', currentPanelId);
+    if (updateError) { toast('Error: '+updateError.message, 'error'); return; }
+    await db.from('panel_rows').delete().eq('panel_id', currentPanelId);
+    panelId = currentPanelId;
+    isUpdate = true;
   } else {
-    const pNotes = document.getElementById('panel-notes')?.value || '';
-    const { data: panel, error } = await db.from('panels')
-      .insert({ name, user_name: userName, notes: pNotes, species: currentSpecies || 'mouse' }).select().single();
-    if (error) { toast('Error: '+error.message, 'error'); return; }
-    panelId = panel.id;
+    // No panel loaded — this is a fresh save. Still guard against accidentally
+    // creating a second row with a name that already exists for this user.
+    const { data: existing } = await db.from('panels')
+      .select('id').eq('name', name).eq('user_name', userName).maybeSingle();
+    if (existing) {
+      await db.from('panel_rows').delete().eq('panel_id', existing.id);
+      const pNotes2 = document.getElementById('panel-notes')?.value || '';
+      await db.from('panels').update({ updated_at: new Date().toISOString(), notes: pNotes2, species: currentSpecies || 'mouse' }).eq('id', existing.id);
+      panelId = existing.id;
+      isUpdate = true;
+      currentPanelId = existing.id; // now tracked, so subsequent saves update in place
+    } else {
+      const pNotes = document.getElementById('panel-notes')?.value || '';
+      const { data: panel, error } = await db.from('panels')
+        .insert({ name, user_name: userName, notes: pNotes, species: currentSpecies || 'mouse' }).select().single();
+      if (error) { toast('Error: '+error.message, 'error'); return; }
+      panelId = panel.id;
+      currentPanelId = panelId; // track it going forward
+    }
   }
 
   const rowsToInsert = currentPanel.map((r,i) => ({
@@ -2130,7 +2155,7 @@ async function savePanel() {
     });
   }
   const titratedMsg = titrated.length ? ` · ${titrated.length} dilutions logged` : '';
-  toast(`"${name}" ${existing ? 'updated' : 'saved'} — ${rowsToInsert.length} markers${titratedMsg}`, 'success');
+  toast(`"${name}" ${isUpdate ? 'updated' : 'saved'} — ${rowsToInsert.length} markers${titratedMsg}`, 'success');
 }
 
 // ── SAVED PANELS ──────────────────────────────────────────
@@ -2277,9 +2302,25 @@ function toggleFavorite(panelId) {
 
 
 async function loadPanelIntoBuilder(panelId) {
-  const { data, error } = await db.from('panel_rows').select('*').eq('panel_id', panelId).order('sort_order');
+  const [{ data: panelRow, error: panelError }, { data, error }] = await Promise.all([
+    db.from('panels').select('*').eq('id', panelId).single(),
+    db.from('panel_rows').select('*').eq('panel_id', panelId).order('sort_order')
+  ]);
+  if (panelError) { toast('Error loading panel: '+panelError.message, 'error'); return; }
   if (error) { toast('Error loading panel: '+error.message, 'error'); return; }
   if (!data || !data.length) { toast('Panel appears to be empty', 'error'); return; }
+
+  // Track which saved panel this is, so Save updates THIS panel rather than
+  // guessing by name (previously this was never tracked, causing Save to either
+  // silently overwrite an unrelated panel with a matching name, or insert a new
+  // duplicate when no name matched).
+  currentPanelId = panelId;
+
+  const nameEl = document.getElementById('panel-name');
+  if (nameEl) nameEl.value = panelRow?.name || '';
+  const notesEl = document.getElementById('panel-notes');
+  if (notesEl) notesEl.value = panelRow?.notes || '';
+  if (panelRow?.species) currentSpecies = panelRow.species;
 
   // Restore live/dead if present
   const ldRow = data.find(r => r.notes === 'live_dead');
@@ -2316,8 +2357,6 @@ async function loadPanelIntoBuilder(panelId) {
   });
   savePanelToLocal();
   renderPanel();
-  // Restore panel notes if saved
-  // (notes not stored per panel_row, would need panels table query — skip for now)
   showView('builder');
   toast('Panel loaded — ' + (data.length) + ' markers', 'success');
 }
@@ -3053,49 +3092,19 @@ async function loadPanelForPrompt(panelId) {
   if (hasBUV) document.getElementById('pg-instrument').value = 'aurora';
 }
 
-// Given the panel's fluorochromes, find spectrally similar dyes (even for markers
-// not currently in the panel) so the AI can consider rotations, not just 1:1 swaps.
-function getSubstitutionNeighborhood(panelRows, threshold = 0.4) {
-  const panelFluors = new Set(panelRows.map(r => (r.fluorochrome || '').trim()).filter(Boolean));
-  const neighborFluors = new Set();
-
-  panelFluors.forEach(f => {
-    const idx = SIMILARITY_DYES.indexOf(f);
-    if (idx === -1) return;
-    SIMILARITY_DYES.forEach((otherDye, j) => {
-      if (j === idx) return;
-      if (SIMILARITY_MATRIX[idx][j] >= threshold) neighborFluors.add(otherDye);
-    });
-  });
-
-  // Map fluorochromes (panel's own + neighbors) to markers via allAntibodies,
-  // since the similarity matrix is keyed by fluorochrome, not marker.
-  const panelMarkers = new Set(panelRows.map(r => r.marker));
-  const markerAlternatives = {}; // marker -> Set of fluorochrome options
-  const markerInPanel = {};      // marker -> bool
-
-  function addMarkerFluor(marker, fluor) {
-    if (!markerAlternatives[marker]) markerAlternatives[marker] = new Set();
-    markerAlternatives[marker].add(fluor);
-  }
-
-  // Alternatives for markers already in the panel
+// For each marker currently in the panel, list every fluorochrome it's available in
+// (from the full database) — this is what lets the AI reason about rotation chains:
+// marker X wants a dye already used by marker A in the panel, A moves to one of ITS
+// other options, which might free up something for B, etc. It needs the whole
+// per-marker option list to trace that, not just markers already flagged as conflicting.
+function getPanelFluorochromeOptions(panelRows) {
+  const markerOptions = {}; // marker -> Set of fluorochrome options (from full DB)
   panelRows.forEach(r => {
-    if (!r.marker) return;
-    markerInPanel[r.marker] = true;
-    allAntibodies.filter(ab => ab.marker === r.marker).forEach(ab => addMarkerFluor(r.marker, ab.fluorochrome));
+    if (!r.marker || markerOptions[r.marker]) return;
+    const opts = allAntibodies.filter(ab => ab.marker === r.marker).map(ab => ab.fluorochrome);
+    markerOptions[r.marker] = new Set(opts.length ? opts : [r.fluorochrome]);
   });
-
-  // Alternatives for markers NOT in the panel but that carry a spectrally-neighboring fluorochrome
-  allAntibodies.forEach(ab => {
-    if (!ab.marker || panelMarkers.has(ab.marker)) return;
-    if (neighborFluors.has(ab.fluorochrome)) {
-      markerInPanel[ab.marker] = markerInPanel[ab.marker] || false;
-      addMarkerFluor(ab.marker, ab.fluorochrome);
-    }
-  });
-
-  return { markerAlternatives, markerInPanel };
+  return markerOptions;
 }
 
 function generatePrompt() {
@@ -3224,17 +3233,18 @@ function generatePrompt() {
     existingPanelText += panelLines + ldLine + '\n';
 
     if (includeAlts) {
-      const { markerAlternatives, markerInPanel } = getSubstitutionNeighborhood(pgSourcePanel.rows);
-      existingPanelText += `\nFLUOROCHROME OPTIONS (for substitution/rotation consideration):\n`;
-      existingPanelText += `(Includes markers already in the panel, plus markers not currently used whose fluorochromes\n`;
-      existingPanelText += ` spectrally overlap with ones in this panel — consider these for rotation, not just direct swaps)\n\n`;
-      Object.keys(markerAlternatives).sort().forEach(marker => {
-        const opts = [...markerAlternatives[marker]].sort().join(', ');
-        const tag  = markerInPanel[marker] ? 'in panel' : 'not in panel — spectral neighbor';
-        existingPanelText += `  ${marker} (${tag}): ${opts}\n`;
+      const markerOptions = getPanelFluorochromeOptions(pgSourcePanel.rows);
+      existingPanelText += `\nFLUOROCHROME OPTIONS FOR EACH MARKER IN THIS PANEL (from full inventory):\n`;
+      existingPanelText += `(Use this to figure out rotation chains — e.g. if a new marker needs a fluorochrome\n`;
+      existingPanelText += ` already used in this panel, check whether the current holder of that fluorochrome\n`;
+      existingPanelText += ` could move to one of ITS other listed options, freeing up the slot.)\n\n`;
+      Object.keys(markerOptions).sort().forEach(marker => {
+        const currentFluor = pgSourcePanel.rows.find(r => r.marker === marker)?.fluorochrome || '';
+        const opts = [...markerOptions[marker]].sort().join(', ');
+        existingPanelText += `  ${marker} (currently ${currentFluor}): ${opts}\n`;
       });
     }
-    existingPanelText += '\nFeel free to suggest keeping this panel as-is, swapping fluorochromes, rotating markers between fluorochromes, or adding/removing markers — whatever best serves the goal above.\n';
+    existingPanelText += '\nIf I ask to add a marker that doesn\'t fit an open fluorochrome, please check whether rotating one or more existing markers to a different fluorochrome (from their options above) would free up a compatible slot, and propose that chain explicitly rather than only suggesting new fluorochromes to order.\n';
   }
 
   // ── Build the full prompt ────────────────────────────────
