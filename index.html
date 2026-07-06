@@ -248,6 +248,7 @@ table.panel-table { width: 100%; border-collapse: collapse; font-size: 12px; }
   cursor: pointer; transition: all 0.15s; white-space: nowrap;
 }
 .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+.pg-source-btn.active { background: var(--surface2); border-color: var(--accent); color: var(--accent); }
 .db-table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
 table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .db-table th {
@@ -468,7 +469,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v51</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v52</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -1157,9 +1158,31 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <div style="display:flex;flex-direction:column;gap:16px;">
 
       <div class="form-card">
+        <h3 style="margin-bottom:16px;font-size:14px">Start From</h3>
+        <div style="display:flex;gap:8px;margin-bottom:14px;">
+          <button type="button" class="btn-secondary pg-source-btn active" id="pg-source-scratch-btn" style="flex:1;font-size:12px;padding:10px" onclick="setPromptSource('scratch')">New panel from scratch</button>
+          <button type="button" class="btn-secondary pg-source-btn" id="pg-source-panel-btn" style="flex:1;font-size:12px;padding:10px" onclick="setPromptSource('panel')">Start from existing panel</button>
+        </div>
+
+        <div id="pg-panel-picker" style="display:none">
+          <div class="form-group">
+            <label class="form-label">Panel</label>
+            <select class="form-input" id="pg-panel-select" onchange="loadPanelForPrompt(this.value)">
+              <option value="">Select a saved panel...</option>
+            </select>
+          </div>
+          <div id="pg-panel-summary" style="display:none;font-size:11px;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px;line-height:1.6;"></div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);cursor:pointer;">
+            <input type="checkbox" id="pg-include-alts">
+            Include fluorochrome alternatives (for substitution/rotation suggestions)
+          </label>
+        </div>
+      </div>
+
+      <div class="form-card">
         <h3 style="margin-bottom:16px;font-size:14px">Experiment Goal</h3>
         <div class="form-group">
-          <label class="form-label">Biological question / goal</label>
+          <label class="form-label" id="pg-goal-label">Biological question / goal</label>
           <textarea class="form-input" id="pg-goal" rows="3"
             placeholder="e.g. Characterize T cell subsets and Tregs in tumor, including CD4, CD8, FoxP3, and activation markers. Mouse samples, spleen and tumor tissue."
             style="resize:vertical;min-height:80px"></textarea>
@@ -1178,13 +1201,13 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
       </div>
 
       <div class="form-card">
-        <h3 style="margin-bottom:16px;font-size:14px">Markers</h3>
+        <h3 style="margin-bottom:16px;font-size:14px" id="pg-markers-heading">Markers</h3>
         <div class="form-group">
-          <label class="form-label">Markers I want — from existing stock</label>
+          <label class="form-label" id="pg-markers-stock-label">Markers I want — from existing stock</label>
           <textarea class="form-input" id="pg-markers-stock" rows="3"
             placeholder="e.g. CD45, CD3, CD4, CD8, FoxP3, Ki67&#10;One per line or comma separated. The AI will see all available fluorochromes for each."
             style="resize:vertical;min-height:80px"></textarea>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px">These will be matched against your database automatically</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px" id="pg-markers-stock-hint">These will be matched against your database automatically</div>
         </div>
         <div class="form-group">
           <label class="form-label">Markers I want — may need to order</label>
@@ -2962,8 +2985,117 @@ function hideSimTooltip() {
 // ════════════════════════════════════════════════════════
 // AI PROMPT GENERATOR
 // ════════════════════════════════════════════════════════
+let pgSource      = 'scratch';   // 'scratch' | 'panel'
+let pgSourcePanel = null;        // { name, species, rows: [...] } once loaded
+
 function initPromptGenerator() {
-  // nothing to load — uses existing allAntibodies
+  populatePromptPanelSelect();
+}
+
+async function populatePromptPanelSelect() {
+  const sel = document.getElementById('pg-panel-select');
+  if (!sel) return;
+  const current = sel.value;
+  const { data } = await db.from('panels').select('id,name,user_name,species,created_at').order('created_at', { ascending: false });
+  sel.innerHTML = '<option value="">Select a saved panel...</option>' +
+    (data || []).map(p => `<option value="${p.id}">${p.name} (${p.user_name})</option>`).join('');
+  if (current) sel.value = current;
+}
+
+function setPromptSource(mode) {
+  pgSource = mode;
+  document.getElementById('pg-source-scratch-btn').classList.toggle('active', mode === 'scratch');
+  document.getElementById('pg-source-panel-btn').classList.toggle('active', mode === 'panel');
+  document.getElementById('pg-panel-picker').style.display = mode === 'panel' ? 'block' : 'none';
+
+  const goalLabel   = document.getElementById('pg-goal-label');
+  const stockLabel  = document.getElementById('pg-markers-stock-label');
+  const stockHint   = document.getElementById('pg-markers-stock-hint');
+  const goalEl      = document.getElementById('pg-goal');
+
+  if (mode === 'panel') {
+    goalLabel.textContent  = 'What would you like help with?';
+    goalEl.placeholder     = 'e.g. Add markers for exhaustion phenotyping. Or: I\'m unsure about the BV421/BV510 pairing — any suggestions?';
+    stockLabel.textContent = 'Additional markers I want — from existing stock';
+    stockHint.textContent  = 'These will be added on top of the current panel above';
+  } else {
+    goalLabel.textContent  = 'Biological question / goal';
+    goalEl.placeholder     = 'e.g. Characterize T cell subsets and Tregs in tumor, including CD4, CD8, FoxP3, and activation markers. Mouse samples, spleen and tumor tissue.';
+    stockLabel.textContent = 'Markers I want — from existing stock';
+    stockHint.textContent  = 'These will be matched against your database automatically';
+    pgSourcePanel = null;
+    document.getElementById('pg-panel-summary').style.display = 'none';
+  }
+}
+
+async function loadPanelForPrompt(panelId) {
+  const summaryEl = document.getElementById('pg-panel-summary');
+  if (!panelId) { pgSourcePanel = null; summaryEl.style.display = 'none'; return; }
+
+  const { data, error } = await db.from('panel_rows').select('*').eq('panel_id', panelId).order('sort_order');
+  if (error || !data) { toast('Error loading panel: ' + (error?.message || 'unknown'), 'error'); return; }
+
+  const selectEl  = document.getElementById('pg-panel-select');
+  const panelName = selectEl.options[selectEl.selectedIndex].text;
+  const rows      = data.filter(r => r.notes !== 'live_dead');
+  const ldRow     = data.find(r => r.notes === 'live_dead');
+
+  pgSourcePanel = { name: panelName, rows, liveDead: ldRow || null };
+
+  const surfaceCount = rows.filter(r => (r.staining_type || 'surface') === 'surface').length;
+  const icCount       = rows.filter(r => r.staining_type === 'intracellular').length;
+  summaryEl.innerHTML = `<strong style="color:var(--text)">${rows.length} markers</strong> loaded (${surfaceCount} surface${icCount ? ', ' + icCount + ' IC' : ''})${ldRow ? ' + live/dead' : ''}<br>` +
+    rows.map(r => r.marker).join(', ');
+  summaryEl.style.display = 'block';
+
+  // Auto-set instrument based on fluorochromes present (BUV dyes need a UV laser)
+  const hasBUV = rows.some(r => (r.fluorochrome || '').toUpperCase().startsWith('BUV'));
+  if (hasBUV) document.getElementById('pg-instrument').value = 'aurora';
+}
+
+// Given the panel's fluorochromes, find spectrally similar dyes (even for markers
+// not currently in the panel) so the AI can consider rotations, not just 1:1 swaps.
+function getSubstitutionNeighborhood(panelRows, threshold = 0.4) {
+  const panelFluors = new Set(panelRows.map(r => (r.fluorochrome || '').trim()).filter(Boolean));
+  const neighborFluors = new Set();
+
+  panelFluors.forEach(f => {
+    const idx = SIMILARITY_DYES.indexOf(f);
+    if (idx === -1) return;
+    SIMILARITY_DYES.forEach((otherDye, j) => {
+      if (j === idx) return;
+      if (SIMILARITY_MATRIX[idx][j] >= threshold) neighborFluors.add(otherDye);
+    });
+  });
+
+  // Map fluorochromes (panel's own + neighbors) to markers via allAntibodies,
+  // since the similarity matrix is keyed by fluorochrome, not marker.
+  const panelMarkers = new Set(panelRows.map(r => r.marker));
+  const markerAlternatives = {}; // marker -> Set of fluorochrome options
+  const markerInPanel = {};      // marker -> bool
+
+  function addMarkerFluor(marker, fluor) {
+    if (!markerAlternatives[marker]) markerAlternatives[marker] = new Set();
+    markerAlternatives[marker].add(fluor);
+  }
+
+  // Alternatives for markers already in the panel
+  panelRows.forEach(r => {
+    if (!r.marker) return;
+    markerInPanel[r.marker] = true;
+    allAntibodies.filter(ab => ab.marker === r.marker).forEach(ab => addMarkerFluor(r.marker, ab.fluorochrome));
+  });
+
+  // Alternatives for markers NOT in the panel but that carry a spectrally-neighboring fluorochrome
+  allAntibodies.forEach(ab => {
+    if (!ab.marker || panelMarkers.has(ab.marker)) return;
+    if (neighborFluors.has(ab.fluorochrome)) {
+      markerInPanel[ab.marker] = markerInPanel[ab.marker] || false;
+      addMarkerFluor(ab.marker, ab.fluorochrome);
+    }
+  });
+
+  return { markerAlternatives, markerInPanel };
 }
 
 function generatePrompt() {
@@ -2976,8 +3108,13 @@ function generatePrompt() {
   const ordering     = document.getElementById('pg-ordering').value;
   const numOptions   = document.getElementById('pg-options').value;
   const extra        = document.getElementById('pg-extra').value.trim();
+  const includeAlts  = document.getElementById('pg-include-alts')?.checked || false;
 
-  if (!goal) { toast('Please describe your experiment goal first', 'error'); return; }
+  if (pgSource === 'panel' && !pgSourcePanel) { toast('Select an existing panel first', 'error'); return; }
+  if (!goal && pgSource === 'scratch') { toast('Please describe your experiment goal first', 'error'); return; }
+  if (!goal && pgSource === 'panel' && !markersStock && !markersOrder) {
+    toast('Describe what you\'d like help with, or add markers to consider', 'error'); return;
+  }
 
   // ── Parse requested markers from stock ─────────────────
   const requestedRaw = markersStock.split(/[,\n]+/).map(s => s.trim()).filter(Boolean);
@@ -3066,16 +3203,52 @@ function generatePrompt() {
     ? `\nMARKERS REQUESTED THAT MAY NEED ORDERING (no specific fluorochrome in stock):\n${markersOrder.split(/[,\n]+/).map(s=>'  - '+s.trim()).filter(Boolean).join('\n')}\n  → Suggest appropriate fluorochrome(s) to order for each.`
     : '';
 
+  // ── Existing panel section (only when starting from a saved panel) ──
+  let existingPanelText = '';
+  let goalHeading = 'EXPERIMENT GOAL';
+
+  if (pgSource === 'panel' && pgSourcePanel) {
+    goalHeading = 'WHAT I NEED HELP WITH';
+
+    const panelLines = pgSourcePanel.rows.map(r => {
+      const fi = getFluorInfo(r.fluorochrome);
+      return `  ${r.marker} | ${r.fluorochrome} | ${r.code || '—'} | ${fi?.excitation_laser ? fi.excitation_laser + 'nm' : '—'}`;
+    }).join('\n');
+
+    const ldLine = pgSourcePanel.liveDead
+      ? `\n  ${pgSourcePanel.liveDead.marker.replace('☠️ ', '')} (Live/Dead) | ${pgSourcePanel.liveDead.fluorochrome}`
+      : '';
+
+    existingPanelText = `EXISTING PANEL: "${pgSourcePanel.name}"\n`;
+    existingPanelText += `(Format: Marker | Fluorochrome | Code | Laser)\n\n`;
+    existingPanelText += panelLines + ldLine + '\n';
+
+    if (includeAlts) {
+      const { markerAlternatives, markerInPanel } = getSubstitutionNeighborhood(pgSourcePanel.rows);
+      existingPanelText += `\nFLUOROCHROME OPTIONS (for substitution/rotation consideration):\n`;
+      existingPanelText += `(Includes markers already in the panel, plus markers not currently used whose fluorochromes\n`;
+      existingPanelText += ` spectrally overlap with ones in this panel — consider these for rotation, not just direct swaps)\n\n`;
+      Object.keys(markerAlternatives).sort().forEach(marker => {
+        const opts = [...markerAlternatives[marker]].sort().join(', ');
+        const tag  = markerInPanel[marker] ? 'in panel' : 'not in panel — spectral neighbor';
+        existingPanelText += `  ${marker} (${tag}): ${opts}\n`;
+      });
+    }
+    existingPanelText += '\nFeel free to suggest keeping this panel as-is, swapping fluorochromes, rotating markers between fluorochromes, or adding/removing markers — whatever best serves the goal above.\n';
+  }
+
   // ── Build the full prompt ────────────────────────────────
   const prompt = `You are an expert flow cytometry panel designer with deep knowledge of antibody-fluorochrome combinations, spectral overlap, and panel optimization.
 
 INSTRUMENT: ${instrumentNote}
 
-EXPERIMENT GOAL:
-${goal}
+${existingPanelText}
+
+${goalHeading}:
+${goal || '(No specific goal stated — see existing panel above and any additional markers below.)'}
 
 PANEL REQUIREMENTS:
-- Maximum panel size: ${maxSize} markers
+- Maximum panel size: ${maxSize} markers${pgSource === 'panel' ? ' (including existing panel above)' : ''}
 - Species: Mouse
 ${avoid ? `- Markers to AVOID or exclude: ${avoid}` : ''}
 ${extra ? `- Additional requirements: ${extra}` : ''}
