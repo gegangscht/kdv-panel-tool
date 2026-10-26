@@ -469,7 +469,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v53.1</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v53.2</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -718,7 +718,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   <div class="page-header">
     <div class="page-header-text"><h2>Saved Panels</h2><p>Browse panels from the whole lab</p></div>
     <div class="page-header-actions">
-      <button class="btn-secondary" onclick="showView('builder')">+ New Panel</button>
+      <button class="btn-secondary" onclick="newPanel()">+ New Panel</button>
     </div>
   </div>
   <div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
@@ -1344,6 +1344,7 @@ let allFluorochromes = [];
 let fluorMap      = {};
 let currentPanel  = [];
 let currentPanelId = null;  // id of the saved panel currently loaded into the builder, if any
+let currentPanelName = '';  // name that panel was loaded/saved under — a different name on save means "save as new"
 let dbFiltered    = [];
 let soSelected    = null;
 
@@ -1847,9 +1848,31 @@ function clearPanel() {
   if (!confirm('Clear the entire panel?')) return;
   currentPanel = [];
   currentPanelId = null;
+  currentPanelName = '';
   localStorage.setItem('kdv_current_panel_id', '');
   savePanelToLocal();
   renderPanel();
+}
+
+// Start a blank panel, detached from any saved panel so Save creates a new one
+function newPanel() {
+  if (currentPanel.length && !confirm('Start a new panel? Unsaved changes to the current panel will be lost.')) return;
+  currentPanel = [];
+  currentLiveDead = [];
+  currentPanelId = null;
+  currentPanelName = '';
+  panelTissues = [];
+  const nameEl  = document.getElementById('panel-name');
+  const notesEl = document.getElementById('panel-notes');
+  if (nameEl)  nameEl.value  = '';
+  if (notesEl) notesEl.value = '';
+  localStorage.setItem('kdv_panel_notes', '');
+  localStorage.setItem('kdv_panel_tissues', '[]');
+  savePanelToLocal();
+  renderPanel();
+  renderLiveDead();
+  renderTissueSelector();
+  showView('builder');
 }
 
 // ── SORT PANEL BY LASER ───────────────────────────────────
@@ -1966,6 +1989,7 @@ function savePanelToLocal() {
   localStorage.setItem('kdv_current_livedead', JSON.stringify(currentLiveDead));
   localStorage.setItem('kdv_panel_name', document.getElementById('panel-name')?.value || '');
   localStorage.setItem('kdv_current_panel_id', currentPanelId || '');
+  localStorage.setItem('kdv_current_panel_name', currentPanelName || '');
   setTimeout(renderPanelSimilarity, 50);
 }
 
@@ -1982,6 +2006,8 @@ function restorePanelFromLocal() {
     }
     const savedPanelId = localStorage.getItem('kdv_current_panel_id');
     currentPanelId = savedPanelId ? savedPanelId : null;
+    // Fallback for state saved before the panel name was tracked
+    currentPanelName = localStorage.getItem('kdv_current_panel_name') ?? (name || '');
     if (savedLD) {
       currentLiveDead = JSON.parse(savedLD);
       renderLiveDead();
@@ -2084,11 +2110,9 @@ async function savePanel() {
   let panelId;
   let isUpdate = false;
 
-  if (currentPanelId) {
-    // A saved panel is loaded (via Edit, or a freshly-made duplicate) — update
-    // THAT specific row by id. This is what a rename should do too: same panel,
-    // new name. Never fall back to name-matching here, since that's what caused
-    // saves to silently land on the wrong panel or create stray duplicates.
+  if (currentPanelId && name === currentPanelName) {
+    // A saved panel is loaded and its name is unchanged — update THAT specific
+    // row by id. A changed name falls through and is saved as a new panel.
     const pNotes2 = document.getElementById('panel-notes')?.value || '';
     const { error: updateError } = await db.from('panels')
       .update({ name, updated_at: new Date().toISOString(), notes: pNotes2, species: currentSpecies || 'mouse' })
@@ -2098,11 +2122,12 @@ async function savePanel() {
     panelId = currentPanelId;
     isUpdate = true;
   } else {
-    // No panel loaded — this is a fresh save. Still guard against accidentally
-    // creating a second row with a name that already exists for this user.
+    // No panel loaded, or loaded panel saved under a new name — this is a new
+    // panel. If the name is already taken, only overwrite after confirmation.
     const { data: existing } = await db.from('panels')
       .select('id').eq('name', name).eq('user_name', userName).maybeSingle();
     if (existing) {
+      if (!confirm(`A panel named "${name}" already exists. Overwrite it?`)) return;
       await db.from('panel_rows').delete().eq('panel_id', existing.id);
       const pNotes2 = document.getElementById('panel-notes')?.value || '';
       await db.from('panels').update({ updated_at: new Date().toISOString(), notes: pNotes2, species: currentSpecies || 'mouse' }).eq('id', existing.id);
@@ -2118,6 +2143,8 @@ async function savePanel() {
       currentPanelId = panelId; // track it going forward
     }
   }
+  currentPanelName = name;
+  savePanelToLocal();
 
   const rowsToInsert = currentPanel.map((r,i) => ({
     panel_id:      panelId,
@@ -2315,6 +2342,7 @@ async function loadPanelIntoBuilder(panelId) {
   // silently overwrite an unrelated panel with a matching name, or insert a new
   // duplicate when no name matched).
   currentPanelId = panelId;
+  currentPanelName = panelRow?.name || '';
 
   const nameEl = document.getElementById('panel-name');
   if (nameEl) nameEl.value = panelRow?.name || '';
