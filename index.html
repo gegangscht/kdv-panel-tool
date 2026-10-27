@@ -469,7 +469,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v53.4</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v53.5</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -3560,8 +3560,9 @@ function calcAntibodyUl(dilution, totalVol, mixType) {
 // Volumes below the minimum pipette volume are pre-diluted in buffer first, so
 // every volume on the scheme can actually be pipetted.
 const PREDIL_FACTORS   = [10, 20, 50, 100, 200, 500, 1000];
-const PREDIL_MIN_TOTAL = 10;   // µL — smallest pre-dilution worth mixing in a tube
-const PREDIL_RESERVE   = 1.2;  // make ≥20% more pre-dilution than gets used
+const PREDIL_MIN_TOTAL = 4;    // µL — smallest pre-dilution worth mixing in a tube
+const PREDIL_MAX_SHARE = 0.1;  // a pre-dilution may make up at most 10% of the mix
+// Every pre-dilution keeps at least one minimum pipette volume spare after use.
 
 function getMinPipetteVol() {
   const v = parseFloat(document.getElementById('exp-min-vol')?.value);
@@ -3593,17 +3594,29 @@ function planAntibody(dilution, totalVol, mixType) {
   let req = minVol / exact;  // overall pre-dilution factor needed
   const maxF = PREDIL_FACTORS[PREDIL_FACTORS.length - 1];
   while (req > maxF) { factors.push(100); req /= 100; }
-  factors.push(PREDIL_FACTORS.find(f => f >= req - 1e-9));
-  const totalFactor = factors.reduce((a, b) => a * b, 1);
+  const prefix = factors.reduce((a, b) => a * b, 1);  // factor of any chained 1:100 steps
+  const need   = exact * prefix;                     // µL of the last stock needed (< minVol)
+
+  // Last step: to save antibody, prefer the smallest factor where taking only the
+  // minimum volume works — it makes ≥ PREDIL_MIN_TOTAL, leaves ≥ minVol spare, and
+  // doesn't take up more than PREDIL_MAX_SHARE of the mix. Otherwise use the smallest
+  // factor that is strong enough and take more.
+  const candidates = PREDIL_FACTORS.filter(f => f >= req - 1e-9);
+  const lastF = candidates.find(f => minVol * f >= PREDIL_MIN_TOTAL - 1e-9
+                                  && minVol * f - need * f >= minVol - 1e-9
+                                  && need * f <= totalVol * PREDIL_MAX_SHARE + 1e-9)
+             ?? candidates[0];
+  factors.push(lastF);
+  const totalFactor = prefix * lastF;
   const addVol = exact * totalFactor;  // ≥ minVol, since totalFactor ≥ minVol/exact
 
-  // Work backwards: each step must yield what the next one takes, plus a reserve.
+  // Work backwards: each step must yield what the next one takes plus minVol spare.
   // Volumes taken are rounded UP to 0.5 µL steps (and never below the minimum).
   const steps = [];
   let needed = addVol;
   for (let i = factors.length - 1; i >= 0; i--) {
     const f = factors[i];
-    const take = Math.ceil(Math.max(minVol, PREDIL_MIN_TOTAL / f, needed * PREDIL_RESERVE / f) * 2 - 1e-9) / 2;
+    const take = Math.ceil(Math.max(minVol, PREDIL_MIN_TOTAL / f, (needed + minVol) / f) * 2 - 1e-9) / 2;
     steps.unshift({ factor: f, take, buffer: roundUl(take * (f - 1)), total: roundUl(take * f) });
     needed = take;
   }
