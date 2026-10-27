@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>KDV Panel Tool</title>
+<script>try { if (localStorage.getItem('kdv_theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch(e) {}</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -30,6 +31,30 @@
   --shadow:    0 4px 24px #00000044;
   --font:      'DM Sans', sans-serif;
   --mono:      'DM Mono', monospace;
+  --hover:     #2a2e44;
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg:        #f4f5f9;
+  --surface:   #ffffff;
+  --surface2:  #eceef5;
+  --border:    #d6d9e4;
+  --text:      #1a1d27;
+  --muted:     #5f6478;
+  --accent:    #2f6fdb;
+  --accent2:   #6d4bd1;
+  --blue:      #1d4ed8;
+  --blue-bg:   #3b82f61a;
+  --green:     #15803d;
+  --green-bg:  #22c55e1f;
+  --red:       #dc2626;
+  --red-bg:    #ef44441a;
+  --violet:    #7e22ce;
+  --violet-bg: #a855f71a;
+  --uv:        #9333ea;
+  --shadow:    0 4px 24px #0000001a;
+  --hover:     #e2e5ef;
+  color-scheme: light;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
@@ -441,7 +466,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   display: flex; align-items: center; justify-content: space-between;
   cursor: pointer; user-select: none;
 }
-.marker-group-header:hover { background: #2a2e44; }
+.marker-group-header:hover { background: var(--hover); }
 .marker-group-rows { display: none; }
 .marker-group.open .marker-group-rows { display: block; }
 .marker-group.open .marker-group-chevron { transform: rotate(90deg); }
@@ -469,7 +494,8 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v53.7</div>
+  <button class="btn-icon" id="theme-toggle" onclick="toggleTheme()" title="Switch light / dark mode" style="margin-right:8px">☀️</button>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v53.8</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -686,7 +712,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 
       <!-- Live/Dead section -->
       <div class="panel-section" style="margin-top:16px;">
-        <div class="panel-section-header" style="background:#1a2a1a;">
+        <div class="panel-section-header" style="background:var(--green-bg);">
           ☠️ Live/Dead Stain
           <span style="font-size:11px;font-weight:400;margin-left:8px;color:var(--muted)">separate stain — not part of the antibody panel</span>
         </div>
@@ -2101,7 +2127,7 @@ function renderPanel() {
 
   // Intracellular section
   if (ic.length) {
-    html += `<tr><td colspan="9" style="padding:6px 10px;background:#2a1a3a;font-size:11px;font-weight:700;color:var(--violet);text-transform:uppercase;letter-spacing:0.5px">
+    html += `<tr><td colspan="9" style="padding:6px 10px;background:var(--violet-bg);font-size:11px;font-weight:700;color:var(--violet);text-transform:uppercase;letter-spacing:0.5px">
       Intracellular Staining (${ic.length} markers)</td></tr>`;
     html += renderRows(ic, surface.length);
   }
@@ -3573,6 +3599,42 @@ function getMinPipetteVol() {
 function saveMinPipetteVol(v) {
   try { localStorage.setItem('kdv_min_pipette_vol', v); } catch(e) {}
 }
+// ── LIGHT / DARK MODE ─────────────────────────────────────
+function toggleTheme() {
+  const light = document.documentElement.dataset.theme !== 'light';
+  if (light) document.documentElement.dataset.theme = 'light';
+  else delete document.documentElement.dataset.theme;
+  try { localStorage.setItem('kdv_theme', light ? 'light' : 'dark'); } catch(e) {}
+  updateThemeToggle();
+}
+function updateThemeToggle() {
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = document.documentElement.dataset.theme === 'light' ? '🌙' : '☀️';
+}
+updateThemeToggle();
+
+// Experiment setup is remembered per device, so "Use panel" starts from the last settings
+const EXP_SETTING_IDS = ['exp-samples','exp-margin-type','exp-margin-value',
+                         'exp-volume-surface','exp-mix-surface','exp-volume-ic','exp-mix-ic'];
+(function rememberExpSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('kdv_exp_settings') || '{}');
+    EXP_SETTING_IDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (saved[id] != null) el.value = saved[id];
+      const save = () => {
+        try {
+          const cur = JSON.parse(localStorage.getItem('kdv_exp_settings') || '{}');
+          cur[id] = el.value;
+          localStorage.setItem('kdv_exp_settings', JSON.stringify(cur));
+        } catch(e) {}
+      };
+      el.addEventListener('input', save);
+      el.addEventListener('change', save);
+    });
+  } catch(e) {}
+})();
 (function restoreMinPipetteVol() {
   try {
     const v  = localStorage.getItem('kdv_min_pipette_vol');
@@ -4133,6 +4195,11 @@ async function loadExperiment(expId) {
   document.getElementById('exp-volume-surface').value  = exp.volume_per_tube||50;
   document.getElementById('exp-margin-type').value     = exp.margin_type||'ul';
   document.getElementById('exp-margin-value').value    = exp.margin_value||10;
+  const icNote = /^([\d.]+)µL IC (1x|2x)/.exec(exp.notes || '');
+  if (icNote) {
+    document.getElementById('exp-volume-ic').value = icNote[1];
+    document.getElementById('exp-mix-ic').value    = icNote[2];
+  }
 
   const hasICLoaded = enrichedExpRows.some(r => r.staining_type === 'intracellular');
   const icSett = document.getElementById('exp-ic-settings');
