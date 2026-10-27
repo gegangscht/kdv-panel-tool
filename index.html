@@ -469,7 +469,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     <button class="nav-btn" onclick="showView('prompt');closeMenu()">AI Prompt</button>
   </div>
   <div class="nav-spacer"></div>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v53.5</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v53.6</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -3558,10 +3558,12 @@ function calcAntibodyUl(dilution, totalVol, mixType) {
 
 // ── PRE-DILUTIONS ─────────────────────────────────────────
 // Volumes below the minimum pipette volume are pre-diluted in buffer first, so
-// every volume on the scheme can actually be pipetted.
-const PREDIL_FACTORS   = [10, 20, 50, 100, 200, 500, 1000];
+// every volume on the scheme can actually be pipetted. Each pre-dilution is made so
+// that exactly PREDIL_TARGET µL goes into the mix — one pipette setting for all of them.
+const PREDIL_TARGET    = 2;    // µL of each pre-dilution added to the mix
 const PREDIL_MIN_TOTAL = 4;    // µL — smallest pre-dilution worth mixing in a tube
-const PREDIL_MAX_SHARE = 0.1;  // a pre-dilution may make up at most 10% of the mix
+const PREDIL_MAX_TOTAL = 500;  // µL — above this, a 1:100 step is chained in first
+const PREDIL_CHAIN     = 100;
 // Every pre-dilution keeps at least one minimum pipette volume spare after use.
 
 function getMinPipetteVol() {
@@ -3580,53 +3582,51 @@ function saveMinPipetteVol(v) {
 })();
 
 // How to pipette one antibody into a mix:
-//   { vol, pre: null }  → add `vol` µL of stock directly
-//   { vol, pre: {...} } → make the pre-dilution step(s), then add `vol` µL of the last one
+//   { vol, pre: null }  → add `vol` µL of stock directly (vol ≥ min pipette volume)
+//   { vol, pre: {...} } → make the pre-dilution step(s), then add `vol` (= PREDIL_TARGET) µL
 // pre.steps[i] = { factor, take, buffer, total }: take µL (of stock, or of the previous
-// step) + buffer µL = total µL at 1:factor. 1:100 steps are chained when 1:1000 isn't enough.
+// step) + buffer µL = total µL, i.e. 1:factor. Buffer is rounded to 0.1 µL, so with
+// totals ≥ 4 µL the final concentration is within 1.25% of the intended dilution.
 function planAntibody(dilution, totalVol, mixType) {
   const exact = calcAntibodyUlExact(dilution, totalVol, mixType);
   if (exact == null) return null;
   const minVol = getMinPipetteVol();
   if (exact >= minVol) return { vol: roundUl(exact), pre: null };
 
-  const factors = [];
-  let req = minVol / exact;  // overall pre-dilution factor needed
-  const maxF = PREDIL_FACTORS[PREDIL_FACTORS.length - 1];
-  while (req > maxF) { factors.push(100); req /= 100; }
-  const prefix = factors.reduce((a, b) => a * b, 1);  // factor of any chained 1:100 steps
-  const need   = exact * prefix;                     // µL of the last stock needed (< minVol)
+  const ceilHalf = v => Math.ceil(v * 2 - 1e-9) / 2;  // round up to 0.5 µL steps
+  const makeStep = (take, factor) => {
+    const buffer = Math.round(take * (factor - 1) * 10) / 10;
+    const total  = roundUl(take + buffer);
+    return { take, buffer, total, factor: total / take };
+  };
 
-  // Last step: to save antibody, prefer the smallest factor where taking only the
-  // minimum volume works — it makes ≥ PREDIL_MIN_TOTAL, leaves ≥ minVol spare, and
-  // doesn't take up more than PREDIL_MAX_SHARE of the mix. Otherwise use the smallest
-  // factor that is strong enough and take more.
-  const candidates = PREDIL_FACTORS.filter(f => f >= req - 1e-9);
-  const lastF = candidates.find(f => minVol * f >= PREDIL_MIN_TOTAL - 1e-9
-                                  && minVol * f - need * f >= minVol - 1e-9
-                                  && need * f <= totalVol * PREDIL_MAX_SHARE + 1e-9)
-             ?? candidates[0];
-  factors.push(lastF);
-  const totalFactor = prefix * lastF;
-  const addVol = exact * totalFactor;  // ≥ minVol, since totalFactor ≥ minVol/exact
+  // Last step: diluted so that PREDIL_TARGET µL carries `need` µL of stock. Take as
+  // little as possible, but make ≥ PREDIL_MIN_TOTAL and keep ≥ minVol spare.
+  const takeFor = need => {
+    const f = PREDIL_TARGET / need;
+    return ceilHalf(Math.max(minVol, (PREDIL_TARGET + minVol) / f, PREDIL_MIN_TOTAL / f));
+  };
 
-  // Work backwards: each step must yield what the next one takes plus minVol spare.
-  // Volumes taken are rounded UP to 0.5 µL steps (and never below the minimum).
-  const steps = [];
-  let needed = addVol;
-  for (let i = factors.length - 1; i >= 0; i--) {
-    const f = factors[i];
-    const take = Math.ceil(Math.max(minVol, PREDIL_MIN_TOTAL / f, (needed + minVol) / f) * 2 - 1e-9) / 2;
-    steps.unshift({ factor: f, take, buffer: roundUl(take * (f - 1)), total: roundUl(take * f) });
-    needed = take;
+  // Chain 1:100 steps while a single step would need more than PREDIL_MAX_TOTAL µL
+  let chained = 0;
+  let need = exact;  // µL of the current stock (antibody, or last chained step) the mix needs
+  while (takeFor(need) * PREDIL_TARGET / need > PREDIL_MAX_TOTAL) { chained++; need *= PREDIL_CHAIN; }
+
+  const steps = [makeStep(takeFor(need), PREDIL_TARGET / need)];
+  for (let i = 0; i < chained; i++) {
+    const next = steps[0].take;
+    steps.unshift(makeStep(ceilHalf(Math.max(minVol, (next + minVol) / PREDIL_CHAIN, PREDIL_MIN_TOTAL / PREDIL_CHAIN)), PREDIL_CHAIN));
   }
-  return { vol: roundUl(addVol), pre: { factor: totalFactor, steps } };
+  const factor = steps.reduce((a, st) => a * st.factor, 1);
+  return { vol: PREDIL_TARGET, pre: { factor, steps } };
 }
 
-// Human-readable pre-dilution steps, e.g. ["0.5 µL antibody + 24.5 µL buffer (1:50)"]
+const fmtFactor = f => f >= 20 ? String(Math.round(f)) : String(Math.round(f * 10) / 10);
+
+// Human-readable pre-dilution steps, e.g. ["0.5 µL antibody + 46.1 µL buffer (1:93)"]
 function preDilutionSteps(pre) {
   return pre.steps.map((s, i) =>
-    `${s.take} µL ${i ? 'of step ' + i : 'antibody'} + ${s.buffer} µL buffer (1:${s.factor})`);
+    `${s.take} µL ${i ? 'of step ' + i : 'antibody'} + ${s.buffer} µL buffer (1:${fmtFactor(s.factor)})`);
 }
 
 // Rows of the experiment panel in pipetting order (surface first, then by laser and emission)
@@ -3660,7 +3660,7 @@ function recalcScheme() {
 
   const { surfaceRows, icRows } = schemeRows();
   const liveDead    = experimentPanel.liveDead || null;
-  let preCount = 0;  // pre-dilutions are labelled P1, P2, … in pipetting order (same as the print sheet)
+  let preCount = 0;  // pre-dilution tubes are labelled D1, D2, … (same as the print sheet)
 
   function preBadge(plan) {
     return `<span style="font-size:10px;background:var(--amber,#b45309);color:#fff;padding:1px 5px;border-radius:3px;margin-left:6px">of ${plan.label}</span>`;
@@ -3682,7 +3682,7 @@ function recalcScheme() {
     // For pre-diluted antibodies this is the volume of pre-dilution added to the mix.
     const plans  = rows.map(r => {
       const p = planAntibody(r.dilution, totalVol, mixType);
-      if (p?.pre) { p.label = 'P' + (++preCount); p.name = r.marker; }
+      if (p?.pre) { p.label = 'D' + (++preCount); p.name = r.marker; }
       return p;
     });
     const abVols = plans.map(p => p?.vol || 0);
@@ -3761,7 +3761,7 @@ function recalcScheme() {
   if (liveDead) {
     // Live/dead is its own 1x stain in the surface volume
     const ldPlan  = planAntibody(liveDead.dilution, totalVolSurface);
-    if (ldPlan?.pre) { ldPlan.label = 'P' + (++preCount); ldPlan.name = liveDead.name; }
+    if (ldPlan?.pre) { ldPlan.label = 'D' + (++preCount); ldPlan.name = liveDead.name; }
     const ldAbVol = ldPlan?.vol || null;
     const ldBufVol = ldAbVol ? Math.round((totalVolSurface - ldAbVol)*100)/100 : null;
     ldHtml = `<div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--green);margin-bottom:10px;">☠️ Live/Dead Stain</div>
@@ -4107,49 +4107,95 @@ function printExperiment() {
   const mixIC   = document.getElementById('exp-mix-ic')?.value || '1x';
   const samples = document.getElementById('exp-samples').value;
   const { surfaceRows, icRows } = schemeRows();
+  const ld = experimentPanel.liveDead;
 
   // Laser colors for print (light pastels that print well)
   const PRINT_LASER_BG   = {355:'#f0eeff',405:'#ede8ff',488:'#e8f0ff',561:'#e8ffee',638:'#fff0ee'};
   const PRINT_LASER_TEXT = {355:'#4a1d96',405:'#5b21b6',488:'#1e40af',561:'#166534',638:'#991b1b'};
+  // Antibody boxes in the fridge, by code letter
+  const BOXES = [['U','UV',355],['V','Violet',405],['B','Blue',488],['G','Green',561],['R','Red',638]];
 
-  // Plan every antibody first, so pre-dilutions can be listed (P1, P2, …) before the mixes
-  const preList = [];
-  function plan(name, dilution, totalVol, mixType, mixLabel) {
-    const p = planAntibody(dilution, totalVol, mixType);
-    if (p?.pre) { p.label = 'P' + (preList.length + 1); p.name = name; p.mixLabel = mixLabel; preList.push(p); }
-    return p;
+  // Plan every antibody first. Pre-dilution tubes are numbered D1, D2, … in the same order as on screen
+  // (D, not P, so they can't be confused with pipettes).
+  let preCount = 0;
+  const toItem = (r, totalVol, mixType) => {
+    const p = planAntibody(r.dilution, totalVol, mixType);
+    if (p?.pre) p.label = 'D' + (++preCount);
+    return { name: r.marker, code: r.code || '', fluorochrome: r.fluorochrome, laser: r.laser, dilution: r.dilution, plan: p };
+  };
+  const ldItem    = ld ? toItem({ marker: ld.name, code: 'LIVE/DEAD', fluorochrome: ld.fluorochrome, laser: ld.laser, dilution: ld.dilution }, totalVolSurface, '1x') : null;
+  const surfItems = surfaceRows.map(r => toItem(r, totalVolSurface, mixSurf));
+  const icItems   = icRows.map(r => toItem(r, totalVolIC, mixIC));
+
+  const codeNum = c => parseInt(String(c).replace(/^\D+/, '')) || 0;
+  const pipetteFor = v => v <= 2 ? 'P2' : v <= 10 ? 'P10' : v <= 20 ? 'P20' : v <= 200 ? 'P200' : 'P1000';
+
+  // Compact fridge list: one column per box, codes in numeric order
+  function fridgeList(items, extra) {
+    const seen = new Set(), cols = {}, other = [];
+    items.forEach(it => {
+      const key = it.code || it.name;
+      if (seen.has(key)) return; seen.add(key);
+      const m = /^([UVBGR])\d+$/i.exec(it.code);
+      if (m) (cols[m[1].toUpperCase()] = cols[m[1].toUpperCase()] || []).push(it);
+      else other.push(it);
+    });
+    const entry = it => `<div class="fr-item">☐ <span class="fr-code">${it.code && it.code !== 'LIVE/DEAD' ? it.code : ''}</span> ${it.name}</div>`;
+    let html = '<div class="fridge"><div class="fr-title">From the fridge</div><div class="fr-cols">';
+    BOXES.forEach(([letter, label, laser]) => {
+      const list = (cols[letter] || []).sort((a, b) => codeNum(a.code) - codeNum(b.code));
+      if (!list.length) return;
+      html += `<div class="fr-col"><div class="fr-head" style="background:${PRINT_LASER_BG[laser]};color:${PRINT_LASER_TEXT[laser]}">${letter} · ${label}</div>${list.map(entry).join('')}</div>`;
+    });
+    if (other.length) html += `<div class="fr-col"><div class="fr-head">Other</div>${other.map(entry).join('')}</div>`;
+    if (extra) html += `<div class="fr-col"><div class="fr-head" style="background:#e8fff0;color:#166534">Live/Dead</div>${entry(extra)}</div>`;
+    return html + '</div></div>';
   }
-  const ld = experimentPanel.liveDead;
-  const ldPlan   = ld ? plan(ld.name, ld.dilution, totalVolSurface, '1x', 'Live/Dead') : null;
-  const surfPlan = surfaceRows.map(r => plan(r.marker, r.dilution, totalVolSurface, mixSurf, 'Surface'));
-  const icPlan   = icRows.map(r => plan(r.marker, r.dilution, totalVolIC, mixIC, 'Intracellular'));
 
-  function volCell(p) {
-    if (!p) return '<td class="vol">—</td>';
-    return p.pre
-      ? `<td class="vol">${p.vol} µL <span class="pre-tag">of ${p.label}</span></td>`
-      : `<td class="vol">${p.vol} µL</td>`;
+  function preTable(items, stepNo, bufferNote) {
+    const pres = items.filter(it => it.plan?.pre);
+    if (!pres.length) return '';
+    return `<div class="mix">
+      <div class="section-header pre-header">Step ${stepNo} — Prepare pre-dilutions <span class="sec-note">label each tube with its D-number · ${bufferNote}</span></div>
+      <table><thead><tr><th class="chk">✓</th><th class="tube">Tube</th><th>Marker</th><th class="code">Code</th><th>Make</th><th class="vol">Add to mix</th></tr></thead><tbody>
+      ${pres.map(it => `<tr>
+        <td class="chk">☐</td>
+        <td class="tube"><span class="pre-tag">${it.plan.label}</span></td>
+        <td class="marker">${it.name}</td>
+        <td class="code">${it.code === 'LIVE/DEAD' ? '' : it.code}</td>
+        <td>${it.plan.pre.steps.map((st, i) => `<div>${it.plan.pre.steps.length > 1 ? (i + 1) + '. ' : ''}<strong>${st.take} µL</strong> ${i ? 'of step ' + i : 'antibody'} + <strong>${st.buffer} µL</strong> buffer <span class="muted">(1:${fmtFactor(st.factor)})</span></div>`).join('')}</td>
+        <td class="vol">${it.plan.vol} µL</td>
+      </tr>`).join('')}
+      </tbody></table></div>`;
   }
 
-  // One mix: buffer first, then each antibody (laser shown as a colored cell, no group rows)
+  // One mix: buffer first, then antibodies from small to large volume, with a pipette
+  // label wherever the pipette changes
   function buildMix(title, color, totalVol, items, note) {
     if (!items.length) return '';
+    const sorted = [...items].sort((a, b) =>
+      (a.plan?.vol ?? Infinity) - (b.plan?.vol ?? Infinity)
+      || (LASER_ORDER[a.laser] ?? 9) - (LASER_ORDER[b.laser] ?? 9)
+      || codeNum(a.code) - codeNum(b.code));
     const totalAbVol  = roundUl(items.reduce((s, it) => s + (it.plan?.vol || 0), 0));
     const totalBufVol = roundUl(totalVol - totalAbVol);
     let html = `<div class="mix">
       <div class="section-header" style="border-left-color:${color}">${title}${note ? ' — ' + note : ''}<span class="sec-total">${totalVol} µL total</span></div>
-      <table><thead><tr><th class="chk">✓</th><th class="laser">Laser</th><th>Marker</th><th>Code</th><th>Fluorochrome</th><th>Dilution</th><th class="vol">Add</th></tr></thead><tbody>
+      <table><thead><tr><th class="chk">✓</th><th class="laser">Laser</th><th>Marker</th><th class="code">Code</th><th>Fluorochrome</th><th>Dilution</th><th class="vol">Add</th></tr></thead><tbody>
       <tr class="buffer-row"><td class="chk">☐</td><td colspan="5">Buffer</td><td class="vol">${totalBufVol > 0 ? totalBufVol + ' µL' : '⚠ antibodies exceed total'}</td></tr>`;
-    items.forEach(it => {
+    let band = null;
+    sorted.forEach(it => {
+      const b = it.plan ? pipetteFor(it.plan.vol) : '—';
+      if (b !== band) { band = b; html += `<tr class="band-row"><td colspan="7">${b === '—' ? 'No dilution' : 'Pipette ' + b + ' · up to ' + b.slice(1) + ' µL'}</td></tr>`; }
       const bg = PRINT_LASER_BG[it.laser] || '#f5f5f5', tc = PRINT_LASER_TEXT[it.laser] || '#333';
       html += `<tr>
         <td class="chk">☐</td>
         <td class="laser" style="background:${bg};color:${tc}">${it.laser || ''}</td>
         <td class="marker">${it.name}</td>
-        <td class="code">${it.code || ''}</td>
+        <td class="code">${it.code === 'LIVE/DEAD' ? '' : it.code}</td>
         <td>${it.fluorochrome || ''}</td>
         <td>${it.dilution || '—'}</td>
-        ${volCell(it.plan)}
+        <td class="vol">${it.plan ? it.plan.vol + ' µL' : '—'}${it.plan?.pre ? ` <span class="pre-tag">of ${it.plan.label}</span>` : ''}</td>
       </tr>`;
     });
     html += `</tbody></table>
@@ -4158,29 +4204,33 @@ function printExperiment() {
     return html;
   }
 
-  const toItems = (rows, plans) => rows.map((r, i) => ({
-    name: r.marker, code: r.code, fluorochrome: r.fluorochrome, laser: r.laser, dilution: r.dilution, plan: plans[i]
-  }));
+  const metaBase = `${new Date().toLocaleDateString()} &nbsp;·&nbsp; ${samples} samples (${tubes} tubes incl. FMOs) &nbsp;·&nbsp; Margin: ${document.getElementById('exp-margin-value').value} ${document.getElementById('exp-margin-type').value === 'pct' ? '%' : 'µL'} &nbsp;·&nbsp; Pre-diluted below ${getMinPipetteVol()} µL, added as ${PREDIL_TARGET} µL`;
 
-  let preHtml = '';
-  if (preList.length) {
-    preHtml = `<div class="mix">
-      <div class="section-header pre-header">Step 1 — Prepare pre-dilutions <span class="sec-note">label each tube with its P-number; use the buffer of the mix it goes into</span></div>
-      <table><thead><tr><th class="chk">✓</th><th class="tube">Tube</th><th>Marker</th><th>For mix</th><th>Make</th><th class="vol">Then add to mix</th></tr></thead><tbody>
-      ${preList.map(p => `<tr>
-        <td class="chk">☐</td>
-        <td class="tube"><span class="pre-tag">${p.label}</span></td>
-        <td class="marker">${p.name}</td>
-        <td>${p.mixLabel}</td>
-        <td>${p.pre.steps.map((s, i) => `<div>${p.pre.steps.length > 1 ? (i + 1) + '. ' : ''}<strong>${s.take} µL</strong> ${i ? 'of step ' + i : 'antibody'} + <strong>${s.buffer} µL</strong> buffer <span class="muted">(1:${s.factor})</span></div>`).join('')}</td>
-        <td class="vol">${p.vol} µL</td>
-      </tr>`).join('')}
-      </tbody></table></div>`;
+  // Page 1 — surface (with live/dead)
+  let step = 1;
+  const surfPre = preTable(ldItem ? [ldItem, ...surfItems] : surfItems, step, 'in staining buffer');
+  if (surfPre) step++;
+  const ldMix   = ldItem ? buildMix(`Step ${step++} — ☠ Live/Dead stain`, '#166534', totalVolSurface, [ldItem], '1x') : '';
+  const surfMix = buildMix(`Step ${step++} — Surface staining`, '#64748b', totalVolSurface, surfItems, mixSurf === '2x' ? '2x concentrate' : '');
+  const page1 = `<div class="page">
+    <h1>${experimentPanel.name} <span class="page-tag">Surface${icItems.length ? ' · page 1 of 2' : ''}</span></h1>
+    <div class="meta">${metaBase} &nbsp;·&nbsp; Surface: ${document.getElementById('exp-volume-surface').value} µL/tube, ${mixSurf} mix</div>
+    ${fridgeList(surfItems, ldItem)}
+    ${surfPre}${ldMix}${surfMix}
+  </div>`;
+
+  // Page 2 — intracellular
+  let page2 = '';
+  if (icItems.length) {
+    const icPre = preTable(icItems, 1, 'in perm buffer');
+    page2 = `<div class="page">
+      <h1>${experimentPanel.name} <span class="page-tag">Intracellular · page 2 of 2</span></h1>
+      <div class="meta">${metaBase} &nbsp;·&nbsp; IC: ${document.getElementById('exp-volume-ic').value} µL/tube, ${mixIC} mix</div>
+      ${fridgeList(icItems, null)}
+      ${icPre}
+      ${buildMix(`Step ${icPre ? 2 : 1} — Intracellular staining`, '#7c3aed', totalVolIC, icItems, mixIC === '2x' ? '2x concentrate' : '')}
+    </div>`;
   }
-  const mixStep = preList.length ? 'Step 2 — ' : '';
-
-  const ldHtml = ld ? buildMix(`${mixStep}☠ Live/Dead stain`, '#166534', totalVolSurface,
-    [{ name: ld.name, code: '', fluorochrome: ld.fluorochrome, laser: ld.laser, dilution: ld.dilution, plan: ldPlan }], '1x') : '';
 
   const win = window.open('','_blank');
   if (!win) { toast('Please allow popups for this site to use Print', 'error'); return; }
@@ -4193,8 +4243,18 @@ function printExperiment() {
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { background: #fff; }
     body { font-family: Arial, sans-serif; font-size: 11px; color: #111; width: 190mm; }
+    .page { width: 190mm; }
+    .page + .page { break-before: page; }
     h1 { font-size: 15px; font-weight: 700; }
-    .meta { color: #555; font-size: 10px; margin: 2px 0 8px; }
+    .page-tag { font-size: 11px; font-weight: 400; color: #555; margin-left: 8px; }
+    .meta { color: #555; font-size: 10px; margin: 2px 0 6px; }
+    .fridge { border: 1px solid #ddd; padding: 4px 6px 5px; }
+    .fr-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; }
+    .fr-cols { display: flex; gap: 6px; }
+    .fr-col { flex: 1; min-width: 0; }
+    .fr-head { font-size: 9px; font-weight: 700; padding: 1px 4px; margin-bottom: 1px; background: #f0f0f0; }
+    .fr-item { font-size: 10px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fr-code { font-family: monospace; font-weight: 700; color: #1e40af; }
     .mix { margin-top: 8px; break-inside: avoid; }
     .section-header {
       font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
@@ -4214,37 +4274,30 @@ function printExperiment() {
     .laser  { width: 40px; text-align: center; font-weight: 700; font-size: 10px; }
     .tube   { width: 40px; text-align: center; }
     .marker { font-weight: 600; }
-    .code   { font-family: monospace; color: #1e40af; font-size: 10px; }
+    .code   { font-family: monospace; color: #1e40af; font-size: 10px; width: 50px; }
     .vol    { text-align: right; font-weight: 700; color: #1e40af; white-space: nowrap; width: 105px; }
     .muted  { color: #777; }
     .pre-tag { display: inline-block; font-size: 9px; font-weight: 700; color: #b45309; border: 1px solid #b45309; border-radius: 3px; padding: 0 4px; }
     .buffer-row td { background: #f3f8ff; font-weight: 600; }
+    .band-row td { background: #fff; border-left: none; border-right: none; padding: 3px 6px 1px; font-size: 9px; font-weight: 700; color: #555; letter-spacing: 0.5px; }
     .totals-box { border: 1px solid #ddd; border-top: none; padding: 4px 8px; font-size: 11px; background: #fafafa; }
   </style>
   </head><body>
-  <h1>${experimentPanel.name}</h1>
-  <div class="meta">
-    ${new Date().toLocaleDateString()} &nbsp;·&nbsp; ${samples} samples (${tubes} tubes incl. FMOs) &nbsp;·&nbsp;
-    Surface: ${document.getElementById('exp-volume-surface').value} µL/tube, ${mixSurf} mix &nbsp;·&nbsp;
-    ${icRows.length ? `IC: ${document.getElementById('exp-volume-ic').value} µL/tube, ${mixIC} mix &nbsp;·&nbsp;` : ''}
-    Margin: ${document.getElementById('exp-margin-value').value} ${document.getElementById('exp-margin-type').value === 'pct' ? '%' : 'µL'}
-    ${preList.length ? `&nbsp;·&nbsp; Antibodies below ${getMinPipetteVol()} µL are pre-diluted (Step 1)` : ''}
-  </div>
-  ${preHtml}
-  ${ldHtml}
-  ${buildMix(`${mixStep}Surface staining`, '#64748b', totalVolSurface, toItems(surfaceRows, surfPlan), mixSurf === '2x' ? '2x concentrate' : '')}
-  ${buildMix(`${mixStep}Intracellular staining`, '#7c3aed', totalVolIC, toItems(icRows, icPlan), mixIC === '2x' ? '2x concentrate' : '')}
+  ${page1}
+  ${page2}
   <script>
-    // Shrink to fit one A4 page (190 × 277 mm printable). Below 70% the text gets too
-    // small to read at the bench, so a very large panel flows onto a second page instead.
+    // Shrink each page to fit one A4 sheet (190 × 277 mm printable). Below 70% the text
+    // gets too small to read at the bench, so a very large page flows onto an extra sheet.
     window.onload = function() {
       var probe = document.createElement('div');
       probe.style.cssText = 'position:absolute;height:277mm;width:1px;visibility:hidden';
       document.body.appendChild(probe);
       var avail = probe.getBoundingClientRect().height;
       probe.remove();
-      var h = document.body.getBoundingClientRect().height;
-      if (h > avail) document.body.style.zoom = Math.max(0.7, Math.floor(avail / h * 100) / 100);
+      document.querySelectorAll('.page').forEach(function(pg) {
+        var h = pg.getBoundingClientRect().height;
+        if (h > avail) pg.style.zoom = Math.max(0.7, Math.floor(avail / h * 100) / 100);
+      });
       window.print();
     };
   <\/script>
