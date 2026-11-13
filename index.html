@@ -495,7 +495,7 @@ table.db-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   </div>
   <div class="nav-spacer"></div>
   <button class="btn-icon" id="theme-toggle" onclick="toggleTheme()" title="Switch light / dark mode" style="margin-right:8px">☀️</button>
-  <div style="font-size:11px;color:var(--border);margin-right:8px">v53.8</div>
+  <div style="font-size:11px;color:var(--border);margin-right:8px">v53.9</div>
   <div class="nav-user" id="nav-user" style="display:none">
     <div class="nav-avatar" id="nav-avatar"></div>
     <span id="nav-name" class="nav-name-text"></span>
@@ -2966,22 +2966,57 @@ async function loadOrderHistory() {
     return;
   }
 
+  // Click an order to show everything in it: by fridge box (U, V, B, G, R), codes in
+  // numeric order, items without a code (kits etc.) last
+  const BOX_ORDER = ['U','V','B','G','R'];
+  const codeKey = c => {
+    const m = /^([A-Za-z]+)(\d+)$/.exec(c || '');
+    if (!m) return [99, 0];
+    const box = BOX_ORDER.indexOf(m[1].toUpperCase());
+    return [box < 0 ? 98 : box, parseInt(m[2])];
+  };
+  const byCode  = (a, b) => { const ka = codeKey(a.code), kb = codeKey(b.code); return ka[0] - kb[0] || ka[1] - kb[1]; };
+
   el.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
     <table class="db-table">
-      <thead><tr><th>Date</th><th>Ordered by</th><th>Items</th><th>Antibodies</th></tr></thead>
-      <tbody>${data.map(o => {
+      <thead><tr><th style="width:24px"></th><th>Date</th><th>Ordered by</th><th>Items</th><th>Antibodies</th></tr></thead>
+      <tbody>${data.map((o, idx) => {
         const date = new Date(o.ordered_at).toLocaleDateString('nl-NL');
         let items = [];
         try { items = JSON.parse(o.items_json||'[]'); } catch(e) {}
-        return `<tr>
+        const detail = [...items].sort(byCode).map(i => `<tr>
+            <td style="font-family:var(--mono);font-size:11px;color:var(--accent)">${i.code || '—'}</td>
+            <td><strong>${i.marker || ''}</strong></td>
+            <td>${i.fluorochrome || ''}</td>
+          </tr>`).join('');
+        return `<tr style="cursor:pointer" onclick="toggleOrderDetail(${idx})" title="Show all items in this order">
+          <td id="order-caret-${idx}" style="color:var(--muted)">▸</td>
           <td>${date}</td>
           <td>${o.ordered_by||'—'}</td>
           <td style="font-weight:600;color:var(--accent)">${o.item_count}</td>
           <td style="font-size:11px;color:var(--muted)">${items.slice(0,5).map(i=>i.marker).join(', ')}${items.length>5?' ...':''}</td>
+        </tr>
+        <tr id="order-detail-${idx}" style="display:none">
+          <td></td>
+          <td colspan="4" style="padding:4px 12px 14px;background:var(--surface2)">
+            ${items.length ? `<table class="db-table" style="font-size:12px">
+              <thead><tr><th>Code</th><th>Marker</th><th>Fluorochrome</th></tr></thead>
+              <tbody>${detail}</tbody>
+            </table>` : '<div style="color:var(--muted);font-size:12px;padding:8px 0">No item details saved for this order</div>'}
+          </td>
         </tr>`;
       }).join('')}</tbody>
     </table>
   </div>`;
+}
+
+function toggleOrderDetail(idx) {
+  const row   = document.getElementById('order-detail-' + idx);
+  const caret = document.getElementById('order-caret-' + idx);
+  if (!row) return;
+  const open = row.style.display === 'none';
+  row.style.display   = open ? '' : 'none';
+  if (caret) caret.textContent = open ? '▾' : '▸';
 }
 
 // ════════════════════════════════════════════════════════
